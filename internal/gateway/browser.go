@@ -537,6 +537,9 @@ func (s *Server) browserStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) browserMCP(w http.ResponseWriter, r *http.Request) {
+	if editionRefuses(w, "the browser") {
+		return
+	}
 	// no web page's, whatever Settings lists; another computer's only with
 	// a gateway key, and then only that key's browsers (browserSession)
 	if fromBrowser(r) || (!local(r) && access.Caller(r.Context()).KeyID == "") {

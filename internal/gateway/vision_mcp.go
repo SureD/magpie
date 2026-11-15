@@ -59,6 +59,9 @@ var visionMCPSchema = map[string]any{
 }
 
 func (s *Server) visionMCP(w http.ResponseWriter, r *http.Request) {
+	if editionRefuses(w, "image recognition") {
+		return
+	}
 	serveMCP(w, r, "magpie's image recognition", "magpie-vision", visionMCPBody, s.visionMCPCall)
 }
 

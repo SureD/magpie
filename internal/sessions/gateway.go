@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -35,15 +36,31 @@ var gatewayGeneration uint64 = 1
 
 // GatewayTurn is one captured client-facing exchange. Input may include replayed
 // history; Output is only this request's reply. It is not a native session.
+// A turn written by the observe recorder stores only the messages that were
+// not already kept (Delta), and says so. Omissions name what was not kept
+// in full. Usage is a snapshot from the usage ledger row for this request;
+// unknown prices and context windows stay unknown.
 type GatewayTurn struct {
-	Agent   string    `json:"agent"`
-	Session string    `json:"session"`
-	Time    time.Time `json:"time"`
-	Model   string    `json:"model"`
-	Status  int       `json:"status"`
-	Input   []Part    `json:"input"`
-	Output  []Part    `json:"output"`
-	Cut     bool      `json:"cut,omitempty"`
+	ID         string     `json:"id,omitempty"`
+	Agent      string     `json:"agent"`
+	Session    string     `json:"session"`
+	Project    string     `json:"project,omitempty"`
+	Time       time.Time  `json:"time"`
+	Model      string     `json:"model"`
+	Status     int        `json:"status"`
+	RequestID  string     `json:"rid,omitempty"`
+	RouteID    int64      `json:"route_id,omitempty"`
+	Stop       string     `json:"stop,omitempty"`
+	Input      []Part     `json:"input"`
+	Output     []Part     `json:"output"`
+	Cut        bool       `json:"cut,omitempty"`
+	Incomplete bool       `json:"incomplete,omitempty"`
+	Cancelled  bool       `json:"cancelled,omitempty"`
+	Delta      bool       `json:"delta,omitempty"`
+	Replayed   int        `json:"replayed,omitempty"`
+	Normalized bool       `json:"normalized,omitempty"`
+	Omissions  []string   `json:"omissions,omitempty"`
+	Usage      *TurnUsage `json:"usage,omitempty"`
 }
 
 func gatewayDir() string { return filepath.Join(settings.Dir(), "gateway-conversations") }
@@ -83,8 +100,12 @@ func saveGatewayTurn(turn GatewayTurn, generation uint64) error {
 	if turn.Time.IsZero() {
 		turn.Time = time.Now()
 	}
-	if turn.Time.Before(time.Now().Add(-GatewayRetention)) {
+	pol := activePolicy()
+	if pol.expiredTime(turn.Time, time.Now()) {
 		return nil
+	}
+	if turn.ID == "" {
+		turn.ID = NewTurnID()
 	}
 	bound := func(parts []Part) []Part {
 		left := 64 << 10 // Each direction gets its own budget; history cannot crowd out the reply.
@@ -104,12 +125,21 @@ func saveGatewayTurn(turn GatewayTurn, generation uint64) error {
 				p.Cut += utf8.RuneCountInString(p.Text[n:])
 				p.Text = p.Text[:n]
 				turn.Cut = true
+				addOmit(&turn, OmitTruncated)
 			}
 			left -= len(p.Text) + len(p.Name) + 128
 			out = append(out, p)
 		}
 		return out
 	}
+	gatewayMu.Lock()
+	defer gatewayMu.Unlock()
+	if generation != gatewayGeneration || !settings.Shared().GatewayConversations {
+		return nil
+	}
+	// Fold under the same lock as the append, so two saves of one session
+	// cannot both decide they are the first turn.
+	folded := foldTurn(&turn)
 	turn.Input = bound(turn.Input)
 	turn.Output = bound(turn.Output)
 	b, err := json.Marshal(turn)
@@ -118,11 +148,6 @@ func saveGatewayTurn(turn GatewayTurn, generation uint64) error {
 	}
 	if len(b) > gatewayTurnMax {
 		return errors.New("gateway conversation exceeds storage limit")
-	}
-	gatewayMu.Lock()
-	defer gatewayMu.Unlock()
-	if generation != gatewayGeneration || !settings.Shared().GatewayConversations {
-		return nil
 	}
 	dir := filepath.Join(gatewayDir(), turn.Time.UTC().Format(time.DateOnly), gatewayIdentity(turn.Agent, turn.Session))
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -149,7 +174,11 @@ func saveGatewayTurn(turn GatewayTurn, generation uint64) error {
 	if err != nil {
 		return err
 	}
-	if end+int64(len(b))+1 > gatewaySessionMax {
+	capBytes := pol.sessionMax
+	if _, err := retentionPolicy(); err != nil {
+		capBytes = defaultPolicy().sessionMax
+	}
+	if capBytes > 0 && end+int64(len(b))+1 > capBytes {
 		return errors.New("gateway session exceeds storage limit")
 	}
 	// A process interrupted mid-append must not poison all later turns.
@@ -159,7 +188,10 @@ func saveGatewayTurn(turn GatewayTurn, generation uint64) error {
 		}
 	}
 	_, err = f.WriteAt(append(b, '\n'), end)
-	return errors.Join(err, f.Close())
+	if err != nil {
+		return err
+	}
+	return commitTurnSide(turn, folded)
 }
 
 // Ignore at most one unfinished turn; earlier complete lines remain intact.
@@ -229,12 +261,19 @@ func HasGatewayConversations() bool {
 // PruneGatewayConversations removes expired date buckets even while recording is
 // off. Reads enforce the exact cutoff too, between periodic cleanup passes.
 func PruneGatewayConversations(now time.Time) error {
+	pol, polErr := retentionPolicy()
+	if polErr != nil {
+		return fmt.Errorf("gateway retention is unreadable, nothing was deleted: %w", polErr)
+	}
 	gatewayMu.Lock()
 	root, generation := gatewayDir(), gatewayGeneration
 	// a deleted session's text in magpie's trash expires as it would have
 	trashErr := clearGatewayTrash(func(d string) bool {
 		date, err := time.Parse(time.DateOnly, d)
-		return err == nil && !date.Add(24*time.Hour).After(now.Add(-GatewayRetention))
+		if err != nil {
+			return false
+		}
+		return pol.expiredDay(date, now)
 	})
 	gatewayMu.Unlock()
 	if trashErr != nil {
@@ -269,8 +308,12 @@ func PruneGatewayConversations(now time.Time) error {
 		if err != nil {
 			return err
 		}
-		date, err := time.Parse(time.DateOnly, strings.Split(rel, string(filepath.Separator))[0])
-		expired := err == nil && !date.Add(24*time.Hour).After(now.Add(-GatewayRetention))
+		top := strings.Split(rel, string(filepath.Separator))[0]
+		if top == "index" || top == "state" {
+			return nil
+		}
+		date, err := time.Parse(time.DateOnly, top)
+		expired := err == nil && pol.expiredDay(date, now)
 		files = append(files, saved{path, info, expired})
 		total += info.Size()
 		return nil
@@ -285,7 +328,7 @@ func PruneGatewayConversations(now time.Time) error {
 		return files[i].info.ModTime().Before(files[j].info.ModTime())
 	})
 	for _, f := range files {
-		if !f.expired && total <= gatewayStoreMax {
+		if !f.expired && (pol.storeMax == 0 || total <= pol.storeMax) {
 			continue
 		}
 		gatewayMu.Lock()
@@ -320,9 +363,14 @@ func GatewayTranscript(agent, id string) (Transcript, error) {
 	gatewayMu.Lock()
 	defer gatewayMu.Unlock()
 	now := time.Now()
+	pol := activePolicy()
 	var paths []string
-	for d := 0; d <= 7; d++ {
-		dir := filepath.Join(gatewayDir(), now.UTC().AddDate(0, 0, -d).Format(time.DateOnly), gatewayIdentity(agent, id))
+	days, err := dayNames(pol, now)
+	if err != nil {
+		return out, err
+	}
+	for _, day := range days {
+		dir := filepath.Join(gatewayDir(), day, gatewayIdentity(agent, id))
 		entries, err := os.ReadDir(dir)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -338,7 +386,7 @@ func GatewayTranscript(agent, id string) (Transcript, error) {
 	}
 	var turns []GatewayTurn
 	keep := func(turn GatewayTurn) {
-		if turn.Agent != agent || turn.Session != id || turn.Time.Before(now.Add(-GatewayRetention)) {
+		if turn.Agent != agent || turn.Session != id || pol.expiredTime(turn.Time, now) {
 			return
 		}
 		turns = append(turns, turn)

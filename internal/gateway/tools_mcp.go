@@ -48,6 +48,9 @@ var (
 const errToolsOff = "magpie's Plugin tools plugin is off, so no plugin's tool runs; turn it on in magpie's Settings → Plugins"
 
 func (s *Server) toolsMCP(w http.ResponseWriter, r *http.Request) {
+	if editionRefuses(w, "plugin tools") {
+		return
+	}
 	serveMCP(w, r, "magpie's plugin tools", "magpie-tools", toolsMCPBody, s.toolsMCPCall)
 }
 

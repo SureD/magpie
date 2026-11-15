@@ -6,6 +6,8 @@
 
 ### 所有 Agent 的模型，一处搞定。
 
+> **SureD 观测版：** 应用把本仓库当模型代理，并查看可识别会话的对话与用量。运行方式、会话头、保留策略和限制见 [README.observe.zh-CN.md](README.observe.zh-CN.md)。这是 yetone/magpie 的 fork，MIT 版权声明见 [LICENSE](LICENSE)。
+
 **Claude Code 跑 Kimi，Codex 跑 DeepSeek，Gemini CLI 跑 GLM，OpenCode 用你的 ChatGPT 订阅。**<br>
 在菜单栏一点就能切换。所有 Agent 共用一个本地网关，<br>
 额度用完时，它会悄悄切到你的下一个账号。

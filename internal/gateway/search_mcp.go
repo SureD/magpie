@@ -96,6 +96,9 @@ type mcpMessage struct {
 }
 
 func (s *Server) searchMCP(w http.ResponseWriter, r *http.Request) {
+	if editionRefuses(w, "web search") {
+		return
+	}
 	serveMCP(w, r, "magpie's web search", "magpie-web-search", 1<<20, s.searchMCPCall)
 }
 

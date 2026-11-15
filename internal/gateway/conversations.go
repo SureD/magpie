@@ -7,8 +7,11 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
 
+	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/provider"
 	"github.com/yetone/magpie/internal/redact"
 	"github.com/yetone/magpie/internal/sessions"
@@ -81,16 +84,171 @@ func recordConversation(w http.ResponseWriter, r *http.Request, proto provider.P
 			return
 		}
 		turn := conversationTurn(proto, input, output)
+		turn.ID = sessions.NewTurnID()
 		turn.Agent, turn.Session, turn.Time = usage.AgentOf(callerOf(r).agent), id, at
+		turn.Project = projectOf(r.Header)
+		turn.Normalized = true
+		sessions.AddOmit(&turn, sessions.OmitNormalized)
 		turn.Status = sink.status
 		if turn.Status == 0 {
 			turn.Status = http.StatusOK
 		}
 		turn.Cut = turn.Cut || cut
+		if len(body) > conversationBodyMax {
+			sessions.AddOmit(&turn, sessions.OmitInputCap)
+		}
+		if turn.Cut {
+			sessions.AddOmit(&turn, sessions.OmitTruncated)
+		}
+		if partsHaveImage(turn) {
+			sessions.AddOmit(&turn, sessions.OmitImages)
+		}
+		if r.Context().Err() != nil {
+			turn.Incomplete = true
+			turn.Cancelled = true
+			sessions.AddOmit(&turn, sessions.OmitCancelled)
+		} else if turn.Cut && !json.Valid(bytes.TrimSpace(output)) {
+			turn.Incomplete = true
+			sessions.AddOmit(&turn, sessions.OmitIncomplete)
+		}
+		if box, _ := r.Context().Value(recordedUsageKey{}).(*recordedUsage); box != nil {
+			box.mu.Lock()
+			if box.has {
+				applyRecordedUsage(&turn, box.rec)
+			}
+			box.mu.Unlock()
+		}
 		if err := sessions.SaveGatewayTurnGeneration(turn, generation); err != nil {
 			log.Printf("gateway conversation save failed: %v", err)
 		}
 	}
+}
+
+// recordedUsage is the ledger row for the request being recorded. It is
+// filled by appendUsage and read when the response has finished. Secrets
+// and the client address are not copied onto the turn.
+type recordedUsage struct {
+	mu  sync.Mutex
+	has bool
+	rec usage.Record
+}
+
+type recordedUsageKey struct{}
+
+func noteRecordedUsage(r *http.Request, rec usage.Record) {
+	box, _ := r.Context().Value(recordedUsageKey{}).(*recordedUsage)
+	if box == nil || rec.IsProbe() {
+		return
+	}
+	box.mu.Lock()
+	defer box.mu.Unlock()
+	if box.has && rec.HandedOn && !box.rec.HandedOn {
+		return
+	}
+	rec.ClientIP = ""
+	rec.ProviderKeyID = ""
+	rec.ProviderKeyName = ""
+	rec.CallerKeyID = ""
+	rec.CallerKeyName = ""
+	rec.CallerIssuerID = ""
+	rec.Error = ""
+	box.rec = rec
+	box.has = true
+}
+
+func projectOf(h http.Header) string {
+	v := strings.TrimSpace(h.Get(ProjectHeader))
+	if v == "" {
+		return ""
+	}
+	v = strings.Join(strings.Fields(redact.Scrub(v)), " ")
+	if utf8.RuneCountInString(v) > 200 {
+		v = string([]rune(v)[:200])
+	}
+	return v
+}
+
+func partsHaveImage(turn sessions.GatewayTurn) bool {
+	for _, p := range append(turn.Input, turn.Output...) {
+		if p.Kind == "image" || strings.Contains(p.Text, "[image]") {
+			return true
+		}
+	}
+	return false
+}
+
+func applyRecordedUsage(turn *sessions.GatewayTurn, rec usage.Record) {
+	if rec.RequestID != "" {
+		turn.RequestID = rec.RequestID
+	}
+	if rec.RouteID != 0 {
+		turn.RouteID = rec.RouteID
+	}
+	if rec.Status != 0 {
+		turn.Status = rec.Status
+	}
+	if rec.Stop != "" {
+		turn.Stop = rec.Stop
+	}
+	if rec.Model != "" {
+		turn.Model = rec.Model
+	}
+	if rec.Canceled() {
+		turn.Cancelled = true
+		turn.Incomplete = true
+		sessions.AddOmit(turn, sessions.OmitCancelled)
+	}
+	u := &sessions.TurnUsage{
+		Input: rec.Input, Output: rec.Output,
+		CacheRead: rec.CacheRead, CacheWrite: rec.CacheWrite, CacheWrite1h: rec.CacheWrite1h,
+		CacheUnknown: rec.CacheUnknown, Reasoning: rec.Reasoning,
+		Millis: rec.Millis, TTFT: rec.TTFT,
+		Provider: rec.Provider, Model: rec.Model,
+	}
+	if cost, ok := KnownCost(rec); ok {
+		u.Cost, u.CostKnown = cost, true
+	}
+	if n, src, ok := KnownContext(rec.Provider, rec.Model); ok {
+		u.Context, u.ContextKnown, u.ContextSource = n, true, src
+	}
+	turn.Usage = u
+}
+
+// KnownCost is the call's price when the client reported one or the
+// serving provider's catalog has one. It is not a guess from another vendor.
+func KnownCost(rec usage.Record) (float64, bool) {
+	if rec.OwnCost != nil {
+		return *rec.OwnCost, true
+	}
+	if rec.Provider == "" {
+		return 0, false
+	}
+	if p, ok := catalog.PricedBy([]string{rec.Provider}, rec.Model); ok {
+		return rec.CostAt(p), true
+	}
+	return 0, false
+}
+
+// KnownContext is the context window the user set on the provider, or the
+// catalog's published window. source is "provider" or "catalog".
+func KnownContext(providerID, model string) (int, string, bool) {
+	for _, p := range provider.All() {
+		if p.ID != providerID {
+			continue
+		}
+		if n := p.ContextOf(model); n > 0 {
+			return n, "provider", true
+		}
+	}
+	if n := catalog.ContextOf(model); n > 0 {
+		return n, "catalog", true
+	}
+	if i := strings.LastIndex(model, "/"); i >= 0 {
+		if n := catalog.ContextOf(model[i+1:]); n > 0 {
+			return n, "catalog", true
+		}
+	}
+	return 0, "", false
 }
 
 func conversationParts(role string, parts []Part) []sessions.Part {

@@ -881,6 +881,7 @@ func appendUsage(r *http.Request, rec usage.Record) {
 		// a request an MCP tool call made: its row names the model (mcpUse)
 		mcpUseOf(r.Context()).used(rec.Provider, rec.Model)
 	}
+	noteRecordedUsage(r, rec)
 	budget.Append(rec)
 }
 
