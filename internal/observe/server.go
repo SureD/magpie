@@ -49,23 +49,49 @@ func (s *Server) Close() error {
 	return s.srv.Close()
 }
 
-// Handler is the observe page and its JSON API. Every route requires key.
-func Handler(key string) http.Handler {
-	mux := http.NewServeMux()
+// Mount serves the session pages on the desktop app's own server, and on
+// magpie web behind that page's key. No second address and no second secret.
+func Mount(mux *http.ServeMux) {
+	h := Handler("")
+	mux.Handle("/api/observe/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = "/api" + strings.TrimPrefix(r.URL.Path, "/api/observe")
+		if r2.URL.Path == "/api" {
+			r2.URL.Path = "/api/"
+		}
+		h.ServeHTTP(w, r2)
+	}))
+	mux.HandleFunc("GET /observe", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/observe/", http.StatusTemporaryRedirect)
+	})
+	mux.HandleFunc("GET /observe/", func(w http.ResponseWriter, r *http.Request) {
+		servePage(w, r, "")
+	})
+}
+
+func servePage(w http.ResponseWriter, r *http.Request, key string) {
+	if !allow(w, r, key) {
+		return
+	}
+	if k := r.URL.Query().Get("k"); key != "" && k != "" {
+		http.SetCookie(w, &http.Cookie{Name: "magpie_observe", Value: k, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	}
 	page, err := Page()
 	if err != nil {
-		page = []byte("observe page missing")
+		http.Error(w, "observe page missing", http.StatusInternalServerError)
+		return
 	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(page)
+}
+
+// Handler is the standalone observe page. A non-empty key is required on
+// every route. An empty key is only for Mount, inside the app.
+func Handler(key string) http.Handler {
+	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		if !allow(w, r, key) {
-			return
-		}
-		if k := r.URL.Query().Get("k"); k != "" {
-			http.SetCookie(w, &http.Cookie{Name: "magpie_observe", Value: k, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-store")
-		w.Write(page)
+		servePage(w, r, key)
 	})
 	mux.HandleFunc("GET /api/bootstrap", func(w http.ResponseWriter, r *http.Request) {
 		if !allow(w, r, key) {
@@ -152,7 +178,12 @@ func Handler(key string) http.Handler {
 }
 
 func allow(w http.ResponseWriter, r *http.Request, key string) bool {
-	if key == "" || subtle.ConstantTimeCompare([]byte(sentKey(r)), []byte(key)) != 1 {
+	// An empty key means the desktop app's own window, or magpie web behind
+	// that page's key. The standalone `magpie observe` server always sets one.
+	if key == "" {
+		return true
+	}
+	if subtle.ConstantTimeCompare([]byte(sentKey(r)), []byte(key)) != 1 {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		http.Error(w, "需要观测页密钥", http.StatusUnauthorized)
 		return false

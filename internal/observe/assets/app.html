@@ -56,8 +56,12 @@
 <script>
 const $ = (s, r=document) => r.querySelector(s);
 const esc = (s) => String(s ?? "");
+const pageQuery = new URLSearchParams(location.search);
+const API = pageQuery.get("api") || "/api";
+const embedded = pageQuery.has("embed");
 async function api(path, opt) {
-  const res = await fetch(path, Object.assign({headers:{"Content-Type":"application/json"}, credentials:"same-origin"}, opt));
+  const url = API + path.replace(/^\/api/, "");
+  const res = await fetch(url, Object.assign({headers:{"Content-Type":"application/json"}, credentials:"same-origin"}, opt));
   const text = await res.text();
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = {error:text}; }
@@ -314,6 +318,15 @@ async function showSettings() {
 
 async function bootUI() {
   boot = await api("/api/bootstrap");
+  if (embedded) {
+    document.querySelector("header").hidden = true;
+    const note = el("p", "card warn");
+    note.textContent = "供应商、模型、Base URL 和密钥在这个窗口左侧的 Providers 里设置，和原来的 Magpie 一样。这里只记录会话、查看对话和用量。网关已经由这个应用在本机启动，不需要另开一个页面或复制密钥。";
+    const open = el("button", null, "打开 Providers");
+    open.onclick = () => { try { parent.show("providers"); } catch (e) { /* standalone */ } };
+    note.append(open);
+    $("#view").before(note);
+  }
   $("#gw").textContent = boot.gateway ? "网关 "+boot.gateway : "";
   document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
     document.querySelectorAll("nav button").forEach(x => x.setAttribute("aria-pressed", x===b));
@@ -321,7 +334,8 @@ async function bootUI() {
     const run = {sessions: loadSessions, trends: showTrends, providers: showProviders, settings: showSettings}[viewName];
     run().catch(showErr);
   });
-  loadSessions().catch(showErr);
+  if (embedded && boot && !boot.recording) showSettings().catch(showErr);
+  else loadSessions().catch(showErr);
 }
 bootUI().catch(showErr);
 </script>

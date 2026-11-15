@@ -17,6 +17,22 @@ import (
 
 func TestMain(m *testing.M) { testenv.Main(m) }
 
+func TestObserveInsideTheAppNeedsNoKey(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	mux := http.NewServeMux()
+	Mount(mux)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/observe/bootstrap", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "confirm_phrase") {
+		t.Fatalf("in-app bootstrap %d %s", rec.Code, rec.Body)
+	}
+	page := httptest.NewRecorder()
+	mux.ServeHTTP(page, httptest.NewRequest("GET", "/observe/?embed=1&api=/api/observe", nil))
+	if page.Code != 200 || !strings.Contains(page.Body.String(), "Magpie") {
+		t.Fatalf("in-app page %d %s", page.Code, page.Body)
+	}
+}
+
 func TestObserveAPIRequiresKeyAndPaginates(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	if err := sessions.SetGatewayRecording(true, false); err != nil {

@@ -1,0 +1,59 @@
+name: macOS app (unsigned)
+
+# An unsigned Apple Silicon build of the desktop app, uploaded as a
+# workflow artifact. It is not a release: nothing is published, signed or
+# notarised. GitHub's macOS 15 runner is arm64; this file does not claim
+# a Linux runner can produce a signed macOS installer.
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Confirm this runner is Apple Silicon
+        run: |
+          set -euo pipefail
+          echo "uname: $(uname -m) $(sw_vers -productVersion)"
+          test "$(uname -m)" = "arm64"
+
+      - name: Build the .app
+        run: make app
+
+      - name: Pack an unsigned zip and disk image
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # Not signed and not notarised. Do not staple or codesign.
+          ditto -c -k --keepParent magpie.app dist/magpie-darwin-arm64-unsigned.zip
+          hdiutil create -volname magpie -srcfolder magpie.app -ov -format UDZO dist/magpie-darwin-arm64-unsigned.dmg
+          shasum -a 256 dist/magpie-darwin-arm64-unsigned.zip dist/magpie-darwin-arm64-unsigned.dmg
+          cat > dist/UNSIGNED.txt <<'EOF'
+          This magpie.app is unsigned and not notarised.
+          macOS Gatekeeper will refuse the first open from a download.
+          Apple's per-app confirmation is a right-click (or Control-click) on magpie.app and Open.
+          This is not a request to turn Gatekeeper off for the whole Mac.
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: magpie-darwin-arm64-unsigned
+          path: |
+            dist/magpie-darwin-arm64-unsigned.zip
+            dist/magpie-darwin-arm64-unsigned.dmg
+            dist/UNSIGNED.txt
+          if-no-files-found: error
+          retention-days: 14

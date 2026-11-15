@@ -23366,7 +23366,7 @@ async function show(v) {
   $("#prefs").classList.toggle("on", v === "settings");
   if (v === "settings") $("#prefs").setAttribute("aria-current", "page"); else $("#prefs").removeAttribute("aria-current");
   navSubs();
-  for (const id of ["agents", "providers", "plugins", "settings", ...magpie.pages()]) $("#view-" + id).hidden = v !== id;
+  for (const id of ["agents", "providers", "plugins", "settings", "observe", ...magpie.pages()]) $("#view-" + id).hidden = v !== id;
   // back to where the reader was in it, and again once it has what it loads
   const back = () => backAfterLoad($("#view-" + v));
   requestAnimationFrame(back);
@@ -23555,7 +23555,7 @@ function jumpFrom(to) {
   jumpNext = true;
 }
 function pageName(v) {
-  return magpie.page(v)?.title ?? ({ agents: "Agents", providers: "Providers", plugins: "Plugins", settings: "Settings" })[v];
+  return magpie.page(v)?.title ?? ({ agents: "Agents", providers: "Providers", plugins: "Plugins", settings: "Settings", observe: "Conversations" })[v];
 }
 function renderBack() {
   const b = $("#navBack"), on = !!backTo && backTo.view !== view;

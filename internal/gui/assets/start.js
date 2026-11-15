@@ -9,7 +9,7 @@ navHides(); // the pages built-in plugins switched off have, from boot.js
 // from the tray or a reload) first, then the one kept; a page gateway mode
 // leaves out, or one there is no longer, gives way to the first page.
 // the pages the window can open on besides the first (Agents)
-const OPEN_VIEWS = ["providers", "plugins", "settings", ...magpie.pages()];
+const OPEN_VIEWS = ["providers", "plugins", "settings", "observe", ...magpie.pages()];
 function keptView() {
   const asked = params.get("view");
   if (asked === "agents" || OPEN_VIEWS.includes(asked)) return asked;
@@ -17,7 +17,10 @@ function keptView() {
   try { v = localStorage.getItem("magpie.lastView") || ""; } catch { /* none kept */ }
   return OPEN_VIEWS.includes(v) ? v : ""; // one gateway mode leaves out, show() makes Providers
 }
-const firstView = mode === "window" ? keptView() || (navMine().includes("agents") ? "providers" : "") : "";
+// First launch opens Conversations: recording setup and the session list,
+// inside this window. Providers and Settings stay in the sidebar. A page
+// the reader already left open still comes back.
+const firstView = mode === "window" ? keptView() || "observe" : "";
 // from the tray panel's More in Plugins (q): Discover, once show() picked the tab (#3579)
 if (OPEN_VIEWS.includes(firstView)) show(firstView).then(() => view === "plugins" && params.has("q") && window.pluginQuery?.(params.get("q")));
 else if (mode === "window" && !gatewayMode && !sideNav()) slide($("#nav"), "nav");
