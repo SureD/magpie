@@ -335,9 +335,6 @@ func servesPages(args []string) bool {
 }
 
 func run(args []string) error {
-	if len(args) > 0 && args[0] == "observe" {
-		gateway.ObserveEdition = true
-	}
 	// a command that saved a provider or a group ends with the agents'
 	// files written, which its save no longer waits for; and a test's run
 	// leaves catalog.Changed as it found it
@@ -497,6 +494,13 @@ func run(args []string) error {
 	// written again when the backend's list changes
 	agent.CodexDesktopList = gateway.CodexDesktopCatalog
 	gateway.CodexDesktopChanged = agent.SyncCatalogSoon
+	// Only a real `magpie observe` (not `observe --help`, which returned
+	// above) turns off the product loops. Setting it earlier made
+	// `observe --help` in the CLI tests disable memory and image tools
+	// for every later test in the process.
+	if len(args) > 0 && args[0] == "observe" {
+		gateway.ObserveEdition = true
+	}
 	// the setup kept the same on every computer, by whichever serves.
 	// magpie observe is the trimmed edition: it does not sync skills,
 	// rewrite other agents, or back itself up while it serves.

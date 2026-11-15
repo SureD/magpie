@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/yetone/magpie/internal/agent"
+	"github.com/yetone/magpie/internal/gateway"
 )
 
 // helpHome points the home and every config, cache and data folder into
@@ -171,6 +172,21 @@ func TestHelpOnEveryCommandDoesNothing(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// `magpie observe --help` must not turn the process into the headless
+// edition: that flag drops memory and image tools for every later test.
+func TestObserveHelpLeavesTheToolsOn(t *testing.T) {
+	helpHome(t)
+	gateway.ObserveEdition = false
+	t.Cleanup(func() { gateway.ObserveEdition = false })
+	out, err := runOut(t, "observe", "--help")
+	if err != nil || gateway.ObserveEdition {
+		t.Fatalf("observe --help: %v flag=%v\n%s", err, gateway.ObserveEdition, out)
+	}
+	if !strings.Contains(out, "magpie") {
+		t.Fatalf("no usage: %q", out)
 	}
 }
 

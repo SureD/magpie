@@ -115,7 +115,12 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DIFF_FILE: ${{ github.workspace }}/pr-info/pr.diff
           PR_BODY_FILE: ${{ github.workspace }}/pr-info/body.txt
-        run: PR_TITLE="$(cat pr-info/title.txt)" ci/.github/ui-preview/run.sh pr out
+        run: |
+          if [ -z "${DEEPSEEK_API_KEY}" ]; then
+            echo "DEEPSEEK_API_KEY is not set on this repository. Skipping the paid UI preview. No model call is made."
+            exit 0
+          fi
+          PR_TITLE="$(cat pr-info/title.txt)" ci/.github/ui-preview/run.sh pr out
       - if: always()
         uses: actions/upload-artifact@v4
         with:

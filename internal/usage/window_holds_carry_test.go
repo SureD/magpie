@@ -13,6 +13,12 @@ import (
 // restart.
 func TestWholeKeptAcrossReset(t *testing.T) {
 	holdsHome(t)
+	// A previous test in this process may have saved with the real clock.
+	// carrySave then skips a write whose simulated time is within 30s of
+	// that, or before it, and a restart reads nothing.
+	carry.Lock()
+	carry.m, carry.path, carry.dirty, carry.wroteAt = nil, "", false, time.Time{}
+	carry.Unlock()
 	now := holdClock(t, time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC))
 	kimi := Record{Agent: "claude-code", Provider: "kimi-code", ProviderAccount: "mu@example.com", Status: 200}
 	call := func(ago time.Duration, in, out int) {
