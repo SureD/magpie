@@ -1397,7 +1397,7 @@ magpie.plugin("sessions", (ctx) => {
           if (currentBox.dataset.talk === k) drawTalk(currentBox, s, sub);
         }
       };
-      api("sessions/transcript?agent=" + encodeURIComponent(s.agent) + "&id=" + encodeURIComponent(s.id) + (sub ? "&sub=" + encodeURIComponent(sub) : ""))
+      api("sessions/transcript?agent=" + encodeURIComponent(s.agent) + "&id=" + encodeURIComponent(s.id) + (sub ? "&sub=" + encodeURIComponent(sub) : "") + "&from=0")
         .then((tr) => finish({ tr }), (err) => finish({ err: err.message }));
       return;
     }
@@ -1421,7 +1421,22 @@ magpie.plugin("sessions", (ctx) => {
       if (p.role === "user" && (!p.kind || p.kind === "text")) said1.dataset.turn = "1";
       out.push(said1);
     }
-    if (got.tr?.cut) out.push(el("p", "cx-none", t("There was more than is shown here")));
+    if (got.tr?.cut) {
+      const more = el("button", "text fork-mark", t("Show the rest of this conversation"));
+      more.type = "button";
+      more.append(el("span", "fork-badge", t("Custom")));
+      more.onclick = () => {
+        more.disabled = true;
+        const from = got.tr.next || 0;
+        api("sessions/transcript?agent=" + encodeURIComponent(s.agent) + "&id=" + encodeURIComponent(s.id) + (sub ? "&sub=" + encodeURIComponent(sub) : "") + "&from=" + encodeURIComponent(from))
+          .then((tr) => {
+            const parts = (got.tr.parts || []).concat(tr.parts || []);
+            talks.set(k, { tr: { ...tr, parts } });
+            drawTalk(box, s, sub);
+          }, (err) => { more.disabled = false; status(err.message, "err"); });
+      };
+      out.push(more);
+    }
     out.push(el("p", "cx-src", t(got.tr?.source === "gateway" ? "Recorded gateway traffic only; earlier, expired or uncaptured content may be missing" : "Read from the agent's session file; magpie keeps no copy")));
     box.replaceChildren(...out);
     box.dispatchEvent(new Event("talkdrawn"));

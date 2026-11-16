@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +31,45 @@ func TestObserveInsideTheAppNeedsNoKey(t *testing.T) {
 	mux.ServeHTTP(page, httptest.NewRequest("GET", "/observe/?embed=1&api=/api/observe", nil))
 	if page.Code != 200 || !strings.Contains(page.Body.String(), "Magpie") {
 		t.Fatalf("in-app page %d %s", page.Code, page.Body)
+	}
+}
+
+func TestObserveThreadShowsEveryRetainedTurn(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	if err := sessions.SetGatewayRecording(true, false); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC().Add(-30 * time.Hour).Truncate(time.Hour)
+	for i := range 130 {
+		turn := sessions.GatewayTurn{
+			Agent: "app", Session: "paged", Time: at.Add(time.Duration(i) * time.Minute),
+			Input: []sessions.Part{{Role: "user", Kind: "text", Text: "u"}}, Output: []sessions.Part{{Role: "assistant", Kind: "text", Text: "a"}},
+		}
+		if err := sessions.SaveGatewayTurn(turn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := Handler("")
+	seen := 0
+	from := 0
+	for {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/thread?agent=app&id=paged&from="+strconv.Itoa(from)+"&limit=40", nil))
+		if rec.Code != 200 {
+			t.Fatalf("thread %d %s", rec.Code, rec.Body)
+		}
+		var page sessions.Thread
+		if err := json.Unmarshal(rec.Body.Bytes(), &page); err != nil {
+			t.Fatal(err)
+		}
+		seen += page.Seen
+		if !page.HasMore {
+			break
+		}
+		from = page.NextFrom
+	}
+	if seen != 130 {
+		t.Fatalf("api showed %d of 130", seen)
 	}
 }
 

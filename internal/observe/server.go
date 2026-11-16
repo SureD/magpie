@@ -14,12 +14,18 @@ import (
 	"time"
 )
 
-//go:embed assets/app.html
+//go:embed assets/app.html assets/fork.css
 var assets embed.FS
 
 // Page is the observe UI.
 func Page() ([]byte, error) {
 	return fs.ReadFile(assets, "assets/app.html")
+}
+
+// ForkCSS is the shared custom-mark stylesheet, the same file the desktop
+// shell serves as /fork.css.
+func ForkCSS() ([]byte, error) {
+	return fs.ReadFile(assets, "assets/fork.css")
 }
 
 // Server is a started observe page.
@@ -93,6 +99,16 @@ func Handler(key string) http.Handler {
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		servePage(w, r, key)
 	})
+	mux.HandleFunc("GET /fork.css", func(w http.ResponseWriter, r *http.Request) {
+		b, err := ForkCSS()
+		if err != nil {
+			http.Error(w, "fork.css missing", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = w.Write(b)
+	})
 	mux.HandleFunc("GET /api/bootstrap", func(w http.ResponseWriter, r *http.Request) {
 		if !allow(w, r, key) {
 			return
@@ -106,6 +122,17 @@ func Handler(key string) http.Handler {
 		out, err := listSessions(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, out)
+	})
+	mux.HandleFunc("GET /api/thread", func(w http.ResponseWriter, r *http.Request) {
+		if !allow(w, r, key) {
+			return
+		}
+		out, err := listThread(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		writeJSON(w, out)

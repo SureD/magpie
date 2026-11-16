@@ -5,6 +5,8 @@
 const I18N = {
   zh: {
     "Conversations": "会话记录",
+    "Custom": "定制",
+    "A custom mark means this fork added or changed it. Unmarked features are the original app.": "定制标记表示本分支新增或改动，未标记功能沿用原版",
     "Calls": "调用次数",
     "Cards": "卡片",
     "Table": "表格",
@@ -3712,6 +3714,7 @@ const I18N = {
     "Collapse content": "收起",
     "Nothing was said here": "这里没有内容",
     "There was more than is shown here": "内容太多，这里只显示了一部分",
+    "Show the rest of this conversation": "继续显示后面的对话",
     "… {n} more characters not shown": "……还有 {n} 个字符未显示",
     "Read from the agent's session file; magpie keeps no copy": "读自 Agent 的会话文件，magpie 不保存副本",
     "Cache hit rate": "缓存命中率",
@@ -5327,6 +5330,8 @@ const I18N = {
   },
   "zh-TW": {
     "Conversations": "工作階段記錄",
+    "Custom": "自訂",
+    "A custom mark means this fork added or changed it. Unmarked features are the original app.": "自訂標記表示這個分支新增或改過，沒有標記的功能沿用原版",
     "Calls": "呼叫次數",
     "Cards": "卡片",
     "Table": "表格",
@@ -9016,6 +9021,7 @@ const I18N = {
     "Collapse content": "收起",
     "Nothing was said here": "這裡沒有內容",
     "There was more than is shown here": "內容太多，這裡只顯示了一部分",
+    "Show the rest of this conversation": "繼續顯示後面的對話",
     "… {n} more characters not shown": "……還有 {n} 個字元未顯示",
     "Read from the agent's session file; magpie keeps no copy": "讀自 Agent 的會話檔案，magpie 不儲存副本",
     "Cache hit rate": "快取命中率",
@@ -10633,6 +10639,8 @@ const I18N = {
   },
   ja: {
     "Conversations": "会話の記録",
+    "Custom": "独自",
+    "A custom mark means this fork added or changed it. Unmarked features are the original app.": "独自マークはこのフォークで追加または変更した部分です。マークのない機能は元のアプリのままです。",
     "Calls": "呼び出し数",
     "Cards": "カード",
     "Table": "表",
@@ -14325,6 +14333,7 @@ const I18N = {
     "Collapse content": "折りたたむ",
     "Nothing was said here": "ここには何もありません",
     "There was more than is shown here": "ここに表示しきれない内容があります",
+    "Show the rest of this conversation": "この会話の続きを表示",
     "… {n} more characters not shown": "… ほか {n} 文字は表示されていません",
     "Read from the agent's session file; magpie keeps no copy": "エージェントのセッションファイルから読み取り。magpie はコピーを保存しません",
     "Cache hit rate": "キャッシュヒット率",
@@ -15941,6 +15950,8 @@ const I18N = {
   },
   de: {
     "Conversations": "Gespräche",
+    "Custom": "Eigen",
+    "A custom mark means this fork added or changed it. Unmarked features are the original app.": "Eine eigene Markierung bedeutet, dass dieser Fork sie hinzugefügt oder geändert hat. Unmarkierte Funktionen sind die ursprüngliche App.",
     "Calls": "Aufrufe",
     "Cards": "Karten",
     "Table": "Tabelle",
@@ -19643,6 +19654,7 @@ const I18N = {
     "Collapse content": "Inhalt einklappen",
     "Nothing was said here": "Hier gibt es keinen Inhalt",
     "There was more than is shown here": "Es gab mehr, als hier angezeigt wird",
+    "Show the rest of this conversation": "Den Rest dieses Gesprächs anzeigen",
     "… {n} more characters not shown": "… {n} weitere Zeichen nicht angezeigt",
     "Read from the agent's session file; magpie keeps no copy": "Aus der Sitzungsdatei des Agenten gelesen; magpie behält keine Kopie",
     "Cache hit rate": "Cache-Trefferquote",

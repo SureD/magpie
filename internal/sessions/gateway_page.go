@@ -580,6 +580,240 @@ func GatewayTurnPage(agent, id string, before time.Time, beforeID string, limit 
 	return out, nil
 }
 
+// ThreadItem is one stored part in time order. Context says the part is
+// not a new message in the running transcript: "system" is repeated
+// instructions, "prefix_reset" is a request whose history did not match
+// what was already saved, kept whole instead of being merged.
+type ThreadItem struct {
+	Time       time.Time `json:"time"`
+	Role       string    `json:"role"`
+	Kind       string    `json:"kind,omitempty"`
+	Name       string    `json:"name,omitempty"`
+	Text       string    `json:"text"`
+	Cut        int       `json:"cut,omitempty"`
+	Turn       string    `json:"turn,omitempty"`
+	Seq        int       `json:"seq,omitempty"`
+	Context    string    `json:"context,omitempty"`
+	Incomplete bool      `json:"incomplete,omitempty"`
+	Cancelled  bool      `json:"cancelled,omitempty"`
+	Status     int       `json:"status,omitempty"`
+	Delta      bool      `json:"delta,omitempty"`
+	Replayed   int       `json:"replayed,omitempty"`
+}
+
+// Thread is one page of a retained conversation, oldest turn first.
+type Thread struct {
+	Items    []ThreadItem `json:"items"`
+	HasMore  bool         `json:"has_more"`
+	NextFrom int          `json:"next_from,omitempty"`
+	Seen     int          `json:"seen"`
+}
+
+// GatewayThread reads retained turns from the oldest, starting at turn
+// index from, up to limit turns. It does not drop a prefix_reset or a
+// repeated message that was stored as its own part. limit defaults to 40
+// and is clamped to 200.
+func GatewayThread(agent, id string, from, limit int) (Thread, error) {
+	out := Thread{Items: []ThreadItem{}}
+	if agent == "" || id == "" {
+		return out, errors.New("no such session")
+	}
+	if from < 0 {
+		from = 0
+	}
+	if limit <= 0 {
+		limit = 40
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	idx := 0
+	err := eachGatewayTurn(agent, id, func(t GatewayTurn) bool {
+		if idx < from {
+			idx++
+			return true
+		}
+		if idx-from >= limit {
+			out.HasMore = true
+			return false
+		}
+		start := len(out.Items)
+		out.Items = append(out.Items, threadItems(t)...)
+		for i := start; i < len(out.Items); i++ {
+			out.Items[i].Seq = idx
+		}
+		out.Seen++
+		idx++
+		return true
+	})
+	if out.HasMore {
+		out.NextFrom = from + out.Seen
+	}
+	return out, err
+}
+
+// GatewayThreadTranscript is the Sessions page's paged read. from is a
+// turn index from the oldest retained turn. Unlike GatewayTranscript it
+// does not keep only the last 128. Next is the turn index to ask for
+// when Cut is set.
+func GatewayThreadTranscript(agent, id string, from int) (Transcript, error) {
+	th, err := GatewayThread(agent, id, from, 40)
+	out := Transcript{Parts: []Part{}, Source: "gateway"}
+	if err != nil {
+		return out, err
+	}
+	size := 0
+	fit := 0
+	last := -1
+	for _, it := range th.Items {
+		if it.Seq != last {
+			if size >= transcriptMax && fit > 0 {
+				out.Cut = true
+				out.Next = from + fit
+				out.Captured = fit
+				return out, nil
+			}
+			fit++
+			last = it.Seq
+		}
+		out.Parts = append(out.Parts, Part{Role: it.Role, Kind: it.Kind, Name: it.Name, Text: it.Text, Cut: it.Cut})
+		size += len(it.Text)
+	}
+	out.Captured = th.Seen
+	if th.HasMore {
+		out.Cut = true
+		out.Next = th.NextFrom
+	}
+	return out, nil
+}
+
+func threadItems(t GatewayTurn) []ThreadItem {
+	reset := false
+	for _, c := range t.Omissions {
+		if c == OmitPrefixReset {
+			reset = true
+			break
+		}
+	}
+	var out []ThreadItem
+	add := func(p Part, context string) {
+		out = append(out, ThreadItem{
+			Time: t.Time, Role: p.Role, Kind: p.Kind, Name: p.Name, Text: p.Text, Cut: p.Cut,
+			Turn: t.ID, Context: context, Incomplete: t.Incomplete, Cancelled: t.Cancelled,
+			Status: t.Status, Delta: t.Delta, Replayed: t.Replayed,
+		})
+	}
+	for _, p := range t.Input {
+		ctx := ""
+		if p.Role == "system" {
+			ctx = "system"
+		} else if reset {
+			ctx = "prefix_reset"
+		}
+		add(p, ctx)
+	}
+	for _, p := range t.Output {
+		add(p, "")
+	}
+	return out
+}
+
+// eachGatewayTurn visits retained turns oldest first.
+func eachGatewayTurn(agent, id string, visit func(GatewayTurn) bool) error {
+	p, err := retentionPolicy()
+	if err != nil {
+		p = defaultPolicy()
+	}
+	days, err := dayNames(p, time.Now())
+	if err != nil {
+		return err
+	}
+	for i := len(days) - 1; i >= 0; i-- {
+		got, err := dayTurns(filepath.Join(gatewayDir(), days[i], gatewayIdentity(agent, id)), agent, id, p)
+		if err != nil {
+			return err
+		}
+		sort.SliceStable(got, func(a, b int) bool {
+			if !got[a].Time.Equal(got[b].Time) {
+				return got[a].Time.Before(got[b].Time)
+			}
+			return got[a].ID < got[b].ID
+		})
+		for _, t := range got {
+			if !visit(t) {
+				return nil
+			}
+		}
+	}
+	return nil
+}
+
+func dayTurns(dir, agent, id string, p policy) ([]GatewayTurn, error) {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []GatewayTurn
+	for _, e := range entries {
+		if !e.Type().IsRegular() {
+			continue
+		}
+		path := filepath.Join(dir, e.Name())
+		if e.Name() == "turns.jsonl" {
+			f, err := os.Open(path)
+			if err != nil {
+				return nil, err
+			}
+			info, err := f.Stat()
+			if err != nil {
+				f.Close()
+				return nil, err
+			}
+			end, err := gatewayCompleteSize(f, info.Size())
+			if err != nil {
+				f.Close()
+				return nil, err
+			}
+			scan := bufio.NewScanner(io.LimitReader(f, end))
+			scan.Buffer(make([]byte, 64<<10), gatewayTurnMax+1)
+			for scan.Scan() {
+				var turn GatewayTurn
+				if json.Unmarshal(scan.Bytes(), &turn) != nil {
+					f.Close()
+					return nil, errors.New("unreadable gateway conversation")
+				}
+				if turn.Agent == agent && turn.Session == id && !p.expiredTime(turn.Time, time.Now()) {
+					out = append(out, turn)
+				}
+			}
+			err = scan.Err()
+			f.Close()
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		var turn GatewayTurn
+		if len(b) > gatewayTurnMax || json.Unmarshal(b, &turn) != nil {
+			return nil, errors.New("unreadable gateway conversation")
+		}
+		if turn.Agent == agent && turn.Session == id && !p.expiredTime(turn.Time, time.Now()) {
+			out = append(out, turn)
+		}
+	}
+	return out, nil
+}
+
 // turnsBefore reads matching turns newest-first, at most need of them.
 // more is true when a further match exists.
 func turnsBefore(dir, agent, id string, p policy, before time.Time, beforeID string, need int) ([]GatewayTurn, bool, error) {

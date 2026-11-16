@@ -19,6 +19,9 @@ type Transcript struct {
 	Cut      bool   `json:"cut,omitempty"` // there was more than is kept here
 	Source   string `json:"source,omitempty"`
 	Captured int    `json:"captured,omitempty"`
+	// Next is the part index to pass as from= to read what Cut left out.
+	// Zero when this answer is the end.
+	Next int `json:"next,omitempty"`
 }
 
 // transcriptMax is the characters of all of a transcript's parts.
@@ -62,6 +65,14 @@ func (t *Transcript) add(_ bool, p Part) bool {
 
 // TranscriptOf reads a session's conversation from its (main) file.
 func TranscriptOf(s Session) (Transcript, error) {
+	return TranscriptFrom(s, 0)
+}
+
+// TranscriptFrom reads the conversation starting at kept part skip.
+// A full file that is longer than transcriptMax comes back with Cut set
+// and Next set to the index of the first part that did not fit, so the
+// caller can ask again instead of stopping at a silent cap.
+func TranscriptFrom(s Session, skip int) (Transcript, error) {
 	if !Reads(s.Agent) {
 		return Transcript{Parts: []Part{}}, ErrNotRead
 	}
@@ -69,7 +80,34 @@ func TranscriptOf(s Session) (Transcript, error) {
 	if !HasTranscript(s.Agent) || s.Path == "" {
 		return out, ErrNoTranscript
 	}
-	return out, readTranscript(s, out.add)
+	if skip < 0 {
+		skip = 0
+	}
+	seen := 0
+	err := readTranscript(s, func(_ bool, p Part) bool {
+		p, ok := keep(p)
+		if !ok {
+			return true
+		}
+		if seen < skip {
+			seen++
+			return true
+		}
+		size := 0
+		for _, x := range out.Parts {
+			size += len(x.Text)
+		}
+		if size >= transcriptMax {
+			out.Cut = true
+			return false
+		}
+		out.Parts = append(out.Parts, p)
+		return true
+	})
+	if out.Cut {
+		out.Next = skip + len(out.Parts)
+	}
+	return out, err
 }
 
 // readTranscript tells add each part of a session's conversation, in order,

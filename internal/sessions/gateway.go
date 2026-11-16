@@ -27,6 +27,7 @@ import (
 
 const GatewayRetention = 7 * 24 * time.Hour
 const gatewayTurnMax = 1 << 20
+const partTextMax = 64 << 10
 const gatewayReadMax = 128
 const gatewayStoreMax = 256 << 20
 const gatewaySessionMax = gatewayStoreMax
@@ -107,18 +108,26 @@ func saveGatewayTurn(turn GatewayTurn, generation uint64) error {
 	if turn.ID == "" {
 		turn.ID = NewTurnID()
 	}
+	// One part is at most 64 KiB. Input and output together stay under the
+	// 1 MiB turn, so a long tool result cannot push the reply off the turn
+	// and a turn of many parts is not stopped at 64 KiB altogether.
+	remain := gatewayTurnMax - 8<<10
 	bound := func(parts []Part) []Part {
-		left := 64 << 10 // Each direction gets its own budget; history cannot crowd out the reply.
 		out := []Part{}
 		for _, p := range parts {
-			if left <= 0 {
+			if remain <= 0 {
 				turn.Cut = true
+				addOmit(&turn, OmitTruncated)
 				break
 			}
 			p.Text = string(redact.ScrubJSON([]byte(p.Text)))
 			p.Name = redact.Scrub(p.Name)
-			if len(p.Text) > min(left, 64<<10) {
-				n := min(left, 64<<10)
+			max := partTextMax
+			if max > remain {
+				max = remain
+			}
+			if len(p.Text) > max {
+				n := max
 				for n > 0 && !utf8.ValidString(p.Text[:n]) {
 					n--
 				}
@@ -127,7 +136,10 @@ func saveGatewayTurn(turn GatewayTurn, generation uint64) error {
 				turn.Cut = true
 				addOmit(&turn, OmitTruncated)
 			}
-			left -= len(p.Text) + len(p.Name) + 128
+			remain -= len(p.Text) + len(p.Name) + 128
+			if remain < 0 {
+				remain = 0
+			}
 			out = append(out, p)
 		}
 		return out

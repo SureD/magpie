@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Magpie 观测</title>
+<link rel="stylesheet" href="/fork.css">
 <style>
   :root { color-scheme: light dark; --bg:#f6f4ef; --ink:#1c1915; --muted:#6b645c; --line:#e4ddd2; --card:#fffdf8; --accent:#9a3412; --ok:#166534; --bad:#9f1239; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#171512; --ink:#f5f0e8; --muted:#b5ab9f; --line:#3a342c; --card:#221f1b; --accent:#fdba74; --ok:#86efac; --bad:#fda4af; }
+    :root:not([data-theme="light"]) { --bg:#171512; --ink:#f5f0e8; --muted:#b5ab9f; --line:#3a342c; --card:#221f1b; --accent:#fdba74; --ok:#86efac; --bad:#fda4af; }
   }
+  :root[data-theme="dark"] { --bg:#171512; --ink:#f5f0e8; --muted:#b5ab9f; --line:#3a342c; --card:#221f1b; --accent:#fdba74; --ok:#86efac; --bad:#fda4af; }
   * { box-sizing: border-box; }
   body { margin:0; font:15px/1.5 "Iowan Old Style", Palatino, "Songti SC", "Noto Serif SC", serif; background:var(--bg); color:var(--ink); }
   header { display:flex; gap:1rem; align-items:center; padding:0.8rem 1.2rem; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); }
@@ -40,7 +42,7 @@
 </head>
 <body>
 <header>
-  <h1>Magpie 观测</h1>
+  <h1 class="fork-mark">Magpie 观测</h1>
   <nav>
     <button type="button" data-view="sessions" aria-pressed="true">会话</button>
     <button type="button" data-view="trends">趋势</button>
@@ -71,6 +73,34 @@ async function api(path, opt) {
 let boot = null, current = null, viewName = "sessions";
 function pill(text, cls="") { const s = document.createElement("span"); s.className = "pill "+cls; s.textContent = text; return s; }
 function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+const FORK = {
+  en: { badge: "Custom", legend: "A custom mark means this fork added or changed it. Unmarked features are the original app." },
+  zh: { badge: "定制", legend: "定制标记表示本分支新增或改动，未标记功能沿用原版" },
+  "zh-TW": { badge: "自訂", legend: "自訂標記表示這個分支新增或改過，沒有標記的功能沿用原版" },
+  ja: { badge: "独自", legend: "独自マークはこのフォークで追加または変更した部分です。マークのない機能は元のアプリのままです。" },
+  de: { badge: "Eigen", legend: "Eine eigene Markierung bedeutet, dass dieser Fork sie hinzugefügt oder geändert hat. Unmarkierte Funktionen sind die ursprüngliche App." }
+};
+function forkPack() {
+  let lang = "";
+  try { lang = (parent && parent !== window && parent.document.documentElement.lang) || ""; } catch (e) { lang = ""; }
+  lang = lang || pageQuery.get("lang") || document.documentElement.lang || navigator.language || "en";
+  const l = lang.toLowerCase();
+  if (l === "zh" || l.startsWith("zh-cn") || l.startsWith("zh-hans")) return FORK.zh;
+  if (l.startsWith("zh")) return FORK["zh-TW"];
+  if (l.startsWith("ja")) return FORK.ja;
+  if (l.startsWith("de")) return FORK.de;
+  return FORK.en;
+}
+function forkBadge() {
+  const b = el("span", "fork-badge", forkPack().badge);
+  b.title = forkPack().legend;
+  return b;
+}
+function heading(tag, text) {
+  const h = el(tag, "fork-mark", text);
+  h.append(forkBadge());
+  return h;
+}
 
 async function loadSessions() {
   const p = new URLSearchParams();
@@ -79,8 +109,16 @@ async function loadSessions() {
   }
   const data = await api("/api/sessions?"+p.toString());
   const side = $("#side"); side.replaceChildren();
-  side.append(el("p","muted","会话来自客户端声明的 ID。没有正文表示当时没打开记录，或正文已按保留策略清掉。"));
-  const form = el("div","card");
+  const note = el("p","muted","网关会话来自客户端自己带的会话 ID。没有正文表示当时没打开记录，或正文已按保留策略清掉。没有会话 ID 的请求不会出现在这里，也不能事后猜出来。");
+  side.append(note);
+  if (boot && !boot.recording) side.append(el("p","warn","记录当前是关的。已经留下的正文仍可打开。关着的时候经过网关的新对话不会保存正文。"));
+  if (embedded) {
+    const native = el("button","fork-mark","本机 Agent 文件");
+    native.append(forkBadge());
+    native.onclick = () => loadNativeList().catch(showErr);
+    side.append(native);
+  }
+  const form = el("div","card fork-mark");
   form.innerHTML = `<label>Agent</label><input id="f-agent" placeholder="留空为全部">
     <label>项目（仅 X-Magpie-Project）</label><input id="f-project">
     <label>从</label><input id="f-from" type="date"><label>到</label><input id="f-to" type="date">
@@ -105,44 +143,134 @@ async function loadSessions() {
 
 function showErr(e) { $("#view").replaceChildren(el("p","bad",e.message||String(e))); }
 
+function diagFor(s) {
+  const box = el("div","card fork-mark");
+  box.append(el("p",null,"诊断"));
+  box.append(el("p","muted","会话 ID "+s.agent+" / "+s.id+(s.project?" · 项目 "+s.project:"")));
+  box.append(el("p", boot && boot.recording ? "ok" : "warn", boot && boot.recording ? "记录开着。新的、带会话 ID 的请求会留下正文。" : "记录关着。此后经过网关但没被记录的正文无法恢复。"));
+  if (s.usage_known && !s.text) box.append(el("p","warn","用量账本里有这个会话，说明调用经过了 Magpie，但没有留下正文。可能当时记录是关的，或正文已过期、被清理。不能从用量数字还原对话。"));
+  else if (!s.usage_known && !s.text) box.append(el("p","warn","没有用量，也没有正文。没有会话 ID 的请求不会被收成这一条。"));
+  else if (s.text) box.append(el("p","ok","下面按时间排列保留期内保存的每一轮。这是已保存的正文，不是把每次请求重复带上的历史再拼成一条猜出来的对话。"));
+  box.append(el("p","muted","图片只有 [image] 占位，原图不在。隐藏的推理、客户端自己没发给模型的界面操作，都不能从流量里还原。截断的段落会标出少了多少字。"));
+  return box;
+}
+
+function renderItem(it) {
+  const d = el("div","msg");
+  let who = (it.role||"")+(it.kind&&it.kind!=="text"?" / "+it.kind:"")+(it.name?" "+it.name:"");
+  if (it.context === "system") who += " · 重复的系统/工具说明，不是新的一句";
+  if (it.context === "prefix_reset") who += " · 这一轮请求原文（和已保存前缀对不上，整段留下，没有并进去）";
+  if (it.cut) who += " · 原文在这里被截断，少了 "+it.cut+" 字";
+  if (it.kind === "image" || it.text === "[image]") who += " · 图片原文不可用";
+  if (it.incomplete) who += " · 这一轮的流没有完整结束";
+  if (it.cancelled) who += " · 这一轮被取消";
+  d.append(el("div","muted",who));
+  const body = el("div", it.kind==="tool_use"||it.kind==="tool_result"||it.role==="tool" ? "tool" : "");
+  body.textContent = it.text || (it.kind==="thinking" ? "（思考内容没有留下）" : "");
+  d.append(body);
+  return d;
+}
+
 async function openSession(s) {
   current = s;
   const view = $("#view");
-  view.replaceChildren(el("h2",null,s.title || s.id), el("p","muted",s.agent+" / "+s.id+(s.project?" / 项目 "+s.project:"")));
+  view.replaceChildren(heading("h2", s.title || s.id), el("p","muted",s.agent+" / "+s.id+(s.project?" / 项目 "+s.project:"")));
+  view.append(diagFor(s));
   const tools = el("div","row");
-  const exp = el("a","btn","导出 Markdown"); exp.href = "/api/export?agent="+encodeURIComponent(s.agent)+"&id="+encodeURIComponent(s.id)+"&format=md";
-  const js = el("a","btn","导出 JSONL"); js.href = "/api/export?agent="+encodeURIComponent(s.agent)+"&id="+encodeURIComponent(s.id)+"&format=jsonl";
+  const q = "agent="+encodeURIComponent(s.agent)+"&id="+encodeURIComponent(s.id);
+  const exp = el("a","btn","导出 Markdown"); exp.href = API+"/api/export?"+q+"&format=md";
+  const js = el("a","btn","导出 JSONL"); js.href = API+"/api/export?"+q+"&format=jsonl";
   tools.append(exp, js);
   view.append(tools);
-  const stats = el("div","card");
-  stats.append(el("p",null,"账本累计（各次请求相加，不是上下文长度）"));
-  if (!s.usage_known) stats.append(el("p","warn","用量账本里没有这个会话。下面的 0 不表示发生过零 token 的调用。"));
-  else {
-    stats.append(el("p",null,`输入 ${s.billed_input} · 输出 ${s.output} · 缓存读 ${s.cache_read} · 缓存写 ${s.cache_write}`+(s.unpriced?` · ${s.unpriced} 次费用未知`:"")));
-    if (s.cost) stats.append(el("p",null,"已知费用合计 "+s.cost));
-  }
-  view.append(stats);
   const talk = el("div"); talk.id = "talk"; view.append(talk);
-  const more = el("button",null,"更早的轮次"); more.id = "more"; more.hidden = true;
-  view.append(more);
-  let before = "", beforeId = "";
+  const more = el("button","fork-mark","后面的轮次"); more.hidden = true; more.append(forkBadge());
+  const all = el("button","fork-mark","加载全部保留轮次"); all.append(forkBadge());
+  view.append(more, all);
+  let from = 0, loading = false;
   async function page(append) {
-    const p = new URLSearchParams({agent:s.agent, id:s.id, limit:"40"});
-    if (before) { p.set("before", before); p.set("before_id", beforeId); }
-    const data = await api("/api/turns?"+p);
-    const box = append ? talk : talk;
-    if (!append) box.replaceChildren();
-    if (!data.turns.length && !append) box.append(el("p","muted","保留期内没有对话正文。"));
-    const frag = document.createDocumentFragment();
-    for (const t of data.turns) frag.append(renderTurn(t));
-    if (append) box.prepend(frag); else box.append(frag);
-    more.hidden = !data.has_more;
-    if (data.has_more) { before = data.next_before; beforeId = data.next_before_id || ""; }
+    if (loading) return;
+    loading = true;
+    try {
+      const data = await api("/api/thread?"+q+"&from="+from+"&limit=40");
+      if (!append) talk.replaceChildren();
+      if (!(data.items||[]).length && !append) talk.append(el("p","muted","保留期内没有对话正文。"));
+      const frag = document.createDocumentFragment();
+      for (const it of data.items || []) frag.append(renderItem(it));
+      talk.append(frag);
+      more.hidden = !data.has_more;
+      all.hidden = !data.has_more;
+      if (data.has_more) from = data.next_from;
+    } finally { loading = false; }
   }
   more.onclick = () => page(true).catch(showErr);
+  all.onclick = async () => {
+    while (!more.hidden) await page(true);
+  };
   await page(false);
-  const series = await api("/api/series?agent="+encodeURIComponent(s.agent)+"&id="+encodeURIComponent(s.id));
-  view.append(renderSeries(series, "这个会话"));
+  if (embedded) {
+    const native = el("div","card");
+    native.append(el("p",null,"本机同 ID 的 Agent 原文"));
+    native.append(el("p","muted","若这个 Agent 在这台电脑上写了自己的会话文件，并且 ID 相同，下面是那个文件。Magpie 不另存一份。文件里没有的内容这里也没有。"));
+    const b = el("button","fork-mark","读取本机文件");
+    b.append(forkBadge());
+    b.onclick = () => readNative(s.agent, s.id, native).catch(showErr);
+    native.append(b);
+    view.append(native);
+  }
+  try {
+    const series = await api("/api/series?agent="+encodeURIComponent(s.agent)+"&id="+encodeURIComponent(s.id));
+    view.append(renderSeries(series, "这个会话"));
+  } catch (e) {
+    view.append(el("p","warn","趋势没有读到。对话正文不受影响。"));
+  }
+}
+
+async function readNative(agent, id, host, from) {
+  from = from || 0;
+  const res = await fetch("/api/sessions/transcript?agent="+encodeURIComponent(agent)+"&id="+encodeURIComponent(id)+"&from="+from, {credentials:"same-origin"});
+  const text = await res.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = {error:text}; }
+  if (!res.ok) {
+    host.append(el("p","warn",(body && (body.error||body.message)) || text || "没有找到同 ID 的本机会话文件。网关没录下的界面内容不能从模型流量还原。"));
+    return;
+  }
+  const box = host.querySelector(".native-talk") || el("div","native-talk");
+  if (!host.contains(box)) host.append(box);
+  for (const p of body.parts || []) box.append(renderItem(p));
+  if (body.cut && body.next) {
+    const more = el("button","fork-mark","继续读本机文件");
+    more.append(forkBadge());
+    more.onclick = () => { more.remove(); readNative(agent, id, host, body.next).catch(showErr); };
+    host.append(more);
+  } else if (!(body.parts||[]).length && from === 0) {
+    box.append(el("p","muted","文件能打开，但里面没有可显示的正文。"));
+  }
+}
+
+async function loadNativeList() {
+  const view = $("#view");
+  view.replaceChildren(heading("h2","本机 Agent 文件"), el("p","muted","这些是 Agent 自己写在这台电脑上的会话，不是 Magpie 的网关记录。记录关掉时，这里仍是能读到原文的地方。Magpie 读的是已有的读取器，不会为了这一页去扫无关目录。云端看不到这些文件。"));
+  let res;
+  try { res = await fetch("/api/sessions", {credentials:"same-origin"}); }
+  catch (e) { view.append(el("p","warn","本机列表只在桌面应用里。")); return; }
+  if (!res.ok) { view.append(el("p","warn","读本机列表失败（"+res.status+"）。独立的 magpie observe 没有这个接口。")); return; }
+  const data = await res.json();
+  const rows = (data.sessions || []).filter(s => s.transcript && !s.gateway);
+  if (!rows.length) view.append(el("p",null,"没有可阅读的本机会话文件。"));
+  const shown = rows.slice(0, 80);
+  for (const s of shown) {
+    const b = el("button","session");
+    b.append(el("strong",null,s.title || s.id));
+    b.append(el("div","muted",s.agent+" · "+(s.last||"").slice(0,16)));
+    b.onclick = () => {
+      const box = el("div","card");
+      view.replaceChildren(heading("h2", s.title || s.id), el("p","muted","来自本机文件 "+s.agent+" / "+s.id+"。这不是网关记录。"), box);
+      readNative(s.agent, s.id, box, 0).catch(showErr);
+    };
+    view.append(b);
+  }
+  if (rows.length > shown.length) view.append(el("p","muted","还有 "+(rows.length-shown.length)+" 条没列在这页。会话页可以按 Agent 打开全部。"));
 }
 
 function renderTurn(t) {
@@ -197,7 +325,7 @@ function renderUsage(u, t) {
 }
 function renderSeries(data, title) {
   const box = el("div","card");
-  box.append(el("h3",null,title+"的 token 趋势"));
+  box.append(heading("h3", title+"的 token 趋势"));
   box.append(el("p","warn",data.note));
   if (!data.buckets.length) box.append(el("p","muted","这段范围没有账本记录。"));
   const max = Math.max(1, ...data.buckets.map(b => b.billed_input+b.output));
@@ -210,7 +338,7 @@ function renderSeries(data, title) {
     bar.append(span); row.append(bar); box.append(row);
   }
   if (data.calls && data.calls.length) {
-    box.append(el("h3",null,"单次输入上下文"));
+    box.append(heading("h3", "单次输入上下文"));
     const table = document.createElement("table");
     table.innerHTML = "<tr><th>时间</th><th>输入上下文</th><th>窗口</th><th>输出</th><th>缓存读/写</th><th>延迟</th><th>状态</th><th>费用</th></tr>";
     for (const c of data.calls.slice(-80)) {
@@ -241,7 +369,7 @@ async function showTrends() {
 async function showProviders() {
   $("#side").replaceChildren(el("p","muted","这里只保存连接。不会为了测试去调用模型。密钥只写入本机 providers.json，接口不再把它读回来。"));
   const data = await api("/api/providers");
-  const view = $("#view"); view.replaceChildren(el("h2",null,"模型连接"));
+  const view = $("#view"); view.replaceChildren(heading("h2","模型连接"));
   for (const p of data.providers) {
     const c = el("div","card");
     c.append(el("strong",null,p.name+" ("+p.id+")"));
@@ -250,7 +378,7 @@ async function showProviders() {
     if (p.models && p.models.length) c.append(el("p","muted",p.models.join(", ")));
     view.append(c);
   }
-  const form = el("form","card");
+  const form = el("form","card fork-mark");
   form.innerHTML = `<h3>添加 API</h3>
     <label>名称</label><input name="name" required placeholder="例如 desk-relay">
     <label>协议</label><select name="protocol"><option value="chat">OpenAI Chat</option><option value="responses">OpenAI Responses</option><option value="anthropic">Anthropic Messages</option><option value="gemini">Gemini</option></select>
@@ -273,12 +401,12 @@ async function showProviders() {
 async function showSettings() {
   $("#side").replaceChildren();
   const b = boot;
-  const view = $("#view"); view.replaceChildren(el("h2",null,"记录与保留"));
+  const view = $("#view"); view.replaceChildren(heading("h2","记录与保留"));
   const limits = el("div","card warn");
   (b.limits||[]).forEach(t => limits.append(el("p",null,t)));
   view.append(limits);
   const cur = b.retention || {};
-  const form = el("form","card");
+  const form = el("form","card fork-mark");
   form.innerHTML = `<p>当前：${b.recording?"记录已打开":"记录关闭（默认）"}。${cur.note||""}</p>
     <label>确认语（打开记录或清除正文时原样填写）</label>
     <input name="confirm" placeholder="${esc(b.confirm_phrase)}">
@@ -317,7 +445,17 @@ async function showSettings() {
 }
 
 async function bootUI() {
+  const theme = pageQuery.get("theme");
+  if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
   boot = await api("/api/bootstrap");
+  const legend = el("p", "fork-legend");
+  legend.append(forkBadge(), document.createTextNode(" " + forkPack().legend));
+  document.querySelector("header").after(legend);
+  document.querySelector("header h1").append(forkBadge());
+  document.querySelectorAll("header nav button").forEach((b) => {
+    b.classList.add("fork-mark");
+    b.append(forkBadge());
+  });
   if (embedded) {
     document.querySelector("header").hidden = true;
     const note = el("p", "card warn");
@@ -334,8 +472,13 @@ async function bootUI() {
     const run = {sessions: loadSessions, trends: showTrends, providers: showProviders, settings: showSettings}[viewName];
     run().catch(showErr);
   });
-  if (embedded && boot && !boot.recording) showSettings().catch(showErr);
-  else loadSessions().catch(showErr);
+  const preset = pageQuery.get("open");
+  loadSessions().then(() => {
+    if (!preset) return;
+    const i = preset.indexOf("/");
+    if (i < 1) return;
+    return openSession({agent:preset.slice(0,i), id:preset.slice(i+1), title:"合成数据（不是真实对话）", text:true, usage_known:false});
+  }).catch(showErr);
 }
 bootUI().catch(showErr);
 </script>
