@@ -110,6 +110,17 @@ func Handler(key string) http.Handler {
 		}
 		writeJSON(w, out)
 	})
+	mux.HandleFunc("GET /api/thread", func(w http.ResponseWriter, r *http.Request) {
+		if !allow(w, r, key) {
+			return
+		}
+		out, err := listThread(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, out)
+	})
 	mux.HandleFunc("GET /api/turns", func(w http.ResponseWriter, r *http.Request) {
 		if !allow(w, r, key) {
 			return

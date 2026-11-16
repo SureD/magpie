@@ -301,6 +301,21 @@ func kimiWireOf(p string) kimiWireSubs {
 // ErrNoSubagent is a subagent the session doesn't have.
 var ErrNoSubagent = errors.New("no such subagent in this session")
 
+// SubagentTranscriptFrom is SubagentTranscript from kept part skip.
+func SubagentTranscriptFrom(s Session, sub string, skip int) (Transcript, error) {
+	if !Reads(s.Agent) {
+		return Transcript{Parts: []Part{}}, ErrNotRead
+	}
+	for _, sa := range s.Subagents {
+		if sa.ID != sub {
+			continue
+		}
+		c := Session{Agent: s.Agent, ID: sa.ID, Path: sa.Path}
+		return TranscriptFrom(c, skip)
+	}
+	return Transcript{Parts: []Part{}}, ErrNoSubagent
+}
+
 // SubagentTranscript is the conversation of the session's subagent sub.
 func SubagentTranscript(s Session, sub string) (Transcript, error) {
 	if !Reads(s.Agent) {
@@ -311,7 +326,7 @@ func SubagentTranscript(s Session, sub string) (Transcript, error) {
 			continue
 		}
 		c := Session{Agent: s.Agent, ID: sa.ID, Path: sa.Path}
-		return TranscriptOf(c)
+		return TranscriptFrom(c, 0)
 	}
 	return Transcript{Parts: []Part{}}, ErrNoSubagent
 }

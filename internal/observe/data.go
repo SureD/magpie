@@ -30,11 +30,11 @@ func bootstrap() map[string]any {
 			"对话正文默认不记录。打开记录前需要输入确认语。记录只留在这台电脑。",
 			"只有客户端自己带上的会话标识才会归档。没有 X-Magpie-Session（或该客户端自己的会话头）的请求不会被猜成一段对话。",
 			"项目名只来自 X-Magpie-Project，不会从目录或提示词推断。",
-			"保存的是规范化后的用户、助手和工具内容，不是逐字节原始报文。图片只留 [image] 占位。单段文本最多 64 KiB，单轮最多 1 MiB。",
+			"保存的是规范化后的用户、助手和工具内容，不是逐字节原始报文。图片只留 [image]，原图不可恢复。单段文本最多 64 KiB，一轮输入加输出最多约 1 MiB，超出的末尾标成截断。",
 			"已知名称的密钥字段会被擦除。Authorization、Cookie 和令牌不会写入对话。任意正文里的隐私不会自动擦掉，否则就无法同时承诺内容完整。",
 			"客户端重发的已记录历史不会再存一份。对不上的上下文会整段留下，并标成 prefix_reset，不会被拼成一条猜出来的历史。",
 			"未配置时沿用原来的 7 天和 256 MiB。天数或容量设为 0 表示该项不自动删除。收紧策略需要再次确认，因为下次清理会删掉超出的内容。",
-			"旧的会话页接口仍只展开最近 128 轮。这个观测页按页读取保留期内的每一轮。",
+			"会话页里不带 from 的旧接口仍只展开最近 128 轮。带 from 的读取和这里的对话从最早一轮接着往下，直到保留期内的每一轮。",
 			"趋势里的「累计输入」是各次请求计费输入之和。单次「输入上下文」才是那一次请求带上的提示词 token。窗口未知时不会填一个估计值。",
 		},
 	}
@@ -211,6 +211,15 @@ func listTurns(r *http.Request) (sessions.TurnPage, error) {
 	}
 	before := parseTime(q.Get("before"))
 	return sessions.GatewayTurnPage(agent, id, before, q.Get("before_id"), atoi(q.Get("limit"), 40))
+}
+
+func listThread(r *http.Request) (sessions.Thread, error) {
+	q := r.URL.Query()
+	agent, id := q.Get("agent"), q.Get("id")
+	if agent == "" || id == "" {
+		return sessions.Thread{}, errors.New("agent and id are required")
+	}
+	return sessions.GatewayThread(agent, id, atoi(q.Get("from"), 0), atoi(q.Get("limit"), 40))
 }
 
 func search(r *http.Request) (map[string]any, error) {

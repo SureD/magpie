@@ -186,6 +186,50 @@ func TestGatewayConversationProtocols(t *testing.T) {
 	}
 }
 
+func TestGatewayConversationToolRoundReachesTheThread(t *testing.T) {
+	fresh(t)
+	if err := sessions.SetGatewayRecording(true, false); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Now().UTC().Truncate(time.Hour)
+	steps := []struct {
+		proto         provider.Protocol
+		input, output string
+	}{
+		{provider.Chat, `{"messages":[{"role":"user","content":"run pwd"}]}`, `{"choices":[{"message":{"role":"assistant","tool_calls":[{"id":"t","type":"function","function":{"name":"bash","arguments":"{\"command\":\"pwd\"}"}}]}}]}`},
+		{provider.Chat, `{"messages":[{"role":"user","content":"run pwd"},{"role":"assistant","tool_calls":[{"id":"t","type":"function","function":{"name":"bash","arguments":"{\"command\":\"pwd\"}"}}]},{"role":"tool","tool_call_id":"t","content":"/tmp"}]}`, "data: {\"choices\":[{\"delta\":{\"content\":\"it is \"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"/tmp\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"},
+		{provider.Anthropic, `{"messages":[{"role":"user","content":"run pwd"}]}`, "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"t\",\"name\":\"bash\",\"input\":{}}}\n\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"command\\\":\\\"pwd\\\"}\"}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"}}\n\n"},
+	}
+	for i, step := range steps {
+		turn := conversationTurn(step.proto, []byte(step.input), []byte(step.output))
+		turn.Agent, turn.Session = "app", "synth"
+		turn.Time = at.Add(time.Duration(i) * time.Second)
+		if err := sessions.SaveGatewayTurn(turn); err != nil {
+			t.Fatal(err)
+		}
+	}
+	th, err := sessions.GatewayThread("app", "synth", 0, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, it := range th.Items {
+		if it.Context == "system" {
+			continue
+		}
+		got = append(got, it.Kind+":"+it.Text)
+	}
+	blob := strings.Join(got, "\n")
+	for _, want := range []string{"run pwd", "pwd", "/tmp", "it is /tmp"} {
+		if !strings.Contains(blob, want) {
+			t.Fatalf("missing %q in\n%s", want, blob)
+		}
+	}
+	if th.HasMore {
+		t.Fatal("synthetic thread should fit one page")
+	}
+}
+
 func TestGatewayConversationScrubsAndMarksIncomplete(t *testing.T) {
 	turn := conversationTurn(provider.Chat, []byte(`{"messages":[{"role":"assistant","tool_calls":[{"id":"t","type":"function","function":{"name":"login","arguments":"{\"password\":\"private-value\"}"}}]}]}`), []byte("data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n"))
 	b, _ := json.Marshal(turn)

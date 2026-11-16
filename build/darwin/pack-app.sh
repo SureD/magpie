@@ -156,11 +156,15 @@ ditto -x -k "$zip" "$work/zip"
 verify_bundle zip "$work/zip/magpie.app"
 [ "$(cat "$work/zip-cdhash.txt")" = "$src_hash" ] || die "zip CDHash differs from the bundle that was packed"
 
-# The Actions artifact is another zip around this zip. The inner bytes
-# have to survive that, then still verify.
-ditto -c -k --keepParent "$zip" "$work/outer.zip"
+# The Actions artifact is another zip around this zip. ditto --keepParent
+# on a file keeps that file's parent directory, so a zip that lives in
+# dist/ extracts as dist/<name>.zip. Pack the file from a directory that
+# contains only it, without --keepParent, so the archive root is the zip.
+mkdir -p "$work/wrap-src"
+cp "$zip" "$work/wrap-src/"
+ditto -c -k "$work/wrap-src" "$work/outer.zip"
 ditto -x -k "$work/outer.zip" "$work/outer"
-cmp "$zip" "$work/outer/magpie-darwin-arm64-unsigned.zip" \
+cmp "$zip" "$work/outer/$(basename "$zip")" \
 	|| die "wrapping the zip changed its bytes"
 ditto -x -k "$work/outer/magpie-darwin-arm64-unsigned.zip" "$work/outer-app"
 verify_bundle outer-zip "$work/outer-app/magpie.app"

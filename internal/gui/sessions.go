@@ -320,10 +320,25 @@ func sessionRoutes(mux *http.ServeMux, w Windows) {
 	// which is only read.
 	mux.HandleFunc("GET /api/sessions/transcript", func(rw http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		from := 0
+		paged := false
+		if q.Has("from") {
+			paged = true
+			from, _ = strconv.Atoi(q.Get("from"))
+			if from < 0 {
+				from = 0
+			}
+		}
 		s, ok := sessions.Find(q.Get("agent"), q.Get("id"))
 		if !ok {
 			if _, found := usage.GatewaySessionByID(q.Get("agent"), q.Get("id"), nil); found {
-				t, err := sessions.GatewayTranscript(q.Get("agent"), q.Get("id"))
+				var t sessions.Transcript
+				var err error
+				if paged {
+					t, err = sessions.GatewayThreadTranscript(q.Get("agent"), q.Get("id"), from)
+				} else {
+					t, err = sessions.GatewayTranscript(q.Get("agent"), q.Get("id"))
+				}
 				if err != nil {
 					fail(rw, err)
 					return
@@ -336,11 +351,20 @@ func sessionRoutes(mux *http.ServeMux, w Windows) {
 		}
 		// sub: one of its subagents, found among those the session lists
 		// (#2261)
-		read := sessions.TranscriptOf
-		if sub := q.Get("sub"); sub != "" {
-			read = func(s sessions.Session) (sessions.Transcript, error) { return sessions.SubagentTranscript(s, sub) }
+		sub := q.Get("sub")
+		var t sessions.Transcript
+		var err error
+		if sub != "" {
+			if paged {
+				t, err = sessions.SubagentTranscriptFrom(s, sub, from)
+			} else {
+				t, err = sessions.SubagentTranscript(s, sub)
+			}
+		} else if paged {
+			t, err = sessions.TranscriptFrom(s, from)
+		} else {
+			t, err = sessions.TranscriptOf(s)
 		}
-		t, err := read(s)
 		if err != nil {
 			fail(rw, err)
 			return
