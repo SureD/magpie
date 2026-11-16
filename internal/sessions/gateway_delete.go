@@ -172,6 +172,10 @@ func DeleteGateway(agent, id string, title string, last time.Time) (Trashed, err
 		os.RemoveAll(dir)
 		return Trashed{}, err
 	}
+	// The index and fold state are not the conversation text. Leaving them
+	// would make a purged session look like it still had a recording.
+	_ = os.Remove(filepath.Join(gatewayDir(), "index", hash+".json"))
+	_ = os.Remove(filepath.Join(gatewayDir(), "state", hash+".json"))
 	return t, nil
 }
 

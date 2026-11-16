@@ -54,6 +54,9 @@ const (
 const memoryServerName = "magpie-memory"
 
 func (s *Server) memoryMCP(w http.ResponseWriter, r *http.Request) {
+	if editionRefuses(w, "shared memory") {
+		return
+	}
 	// what is known about this computer's user, and what goes into every
 	// agent's instructions here (the digest): only an agent on this
 	// computer reads or writes it, as the hub gives it (HereOnly). Another

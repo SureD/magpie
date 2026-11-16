@@ -10113,6 +10113,11 @@ func dshCompacts(h http.Header) bool {
 // agent names itself in sessionHeaders is taken.
 const SessionHeader = "X-Magpie-Session"
 
+// ProjectHeader is an optional project name the client sends with
+// X-Magpie-Session. magpie does not infer a project from the working
+// directory, the prompt, or any other request.
+const ProjectHeader = "X-Magpie-Project"
+
 // AccountHeader pins a request to one of a subscription's accounts, by its
 // user (an email, a login) or its id in the routing trace, percent-encoded
 // when it isn't ASCII (pinnedName): only it is tried, and when it can't take the request the caller is told why rather

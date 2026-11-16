@@ -334,6 +334,7 @@ func (s *Server) codexBackend(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost && rest == "/responses" {
 		withGatewaySession(w, r)
 		var recorded, hooked func()
+		r = r.WithContext(context.WithValue(r.Context(), recordedUsageKey{}, &recordedUsage{}))
 		w, recorded = recordConversation(w, r, provider.Responses, body)
 		defer recorded()
 		// and the tool loop it may be stuck in spends that sign-in's

@@ -6,6 +6,8 @@
 
 ### 所有 Agent 的模型，一处搞定。
 
+> **SureD 观测版（Apple Silicon）：** 安装 `magpie.app` 即可，不需要安装 Go。供应商和密钥在窗口里的 Providers，会话记录在 Conversations。安装包只有临时签名、没有公证，第一次打开要在「隐私与安全性」里对这一个应用点「仍要打开」。步骤见 [README.observe.zh-CN.md](README.observe.zh-CN.md)。这是 yetone/magpie 的 fork，MIT 版权声明见 [LICENSE](LICENSE)。
+
 **Claude Code 跑 Kimi，Codex 跑 DeepSeek，Gemini CLI 跑 GLM，OpenCode 用你的 ChatGPT 订阅。**<br>
 在菜单栏一点就能切换。所有 Agent 共用一个本地网关，<br>
 额度用完时，它会悄悄切到你的下一个账号。

@@ -36,6 +36,7 @@ func (s *Server) serveAgent(w http.ResponseWriter, r *http.Request, from provide
 		writePrevNotFound(w, id)
 		return
 	}
+	r = r.WithContext(context.WithValue(r.Context(), recordedUsageKey{}, &recordedUsage{}))
 	w, recorded := recordConversation(w, r, from, body)
 	defer recorded()
 	// a conversation going round one tool call is answered here, before

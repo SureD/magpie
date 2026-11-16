@@ -49,6 +49,7 @@ import (
 	"github.com/yetone/magpie/internal/middleware"
 	"github.com/yetone/magpie/internal/netproxy"
 	"github.com/yetone/magpie/internal/notices"
+	"github.com/yetone/magpie/internal/observe"
 	"github.com/yetone/magpie/internal/plugin"
 	"github.com/yetone/magpie/internal/profile"
 	"github.com/yetone/magpie/internal/provider"
@@ -1202,6 +1203,7 @@ func Handler(w Windows, gw *gateway.Server) http.Handler {
 		webPage.Store(true)
 	}
 	mux := http.NewServeMux()
+	observe.Mount(mux)
 	page := devPage(revalidated(http.FileServer(http.FS(staticFS()))))
 	mux.Handle("/", http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		if warmsSessions(r) {

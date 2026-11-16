@@ -507,6 +507,8 @@ Codex's newest rollout's last line before magpie restarts Codex
 
 ## Local Gateway Conversation Recording
 
+The observe edition (`magpie observe`, page in `internal/observe`) keeps this store and adds a configurable retention file, `gateway-retention.json`, beside settings. A missing file is still 7 days and 256 MiB, so an existing install is not deleted or extended until someone sets it. `days`, `store_mb` or `session_mb` of 0 means that limit is not applied. Per-turn (1 MiB) and per-part (64 KiB) caps remain. An unreadable retention file makes prune delete nothing. Tightening a policy requires an explicit confirmation because the next prune can remove older text. The legacy `GatewayTranscript` path, used by `/api/sessions/transcript`, still returns the collapsed last 128 exchanges and marks `cut`. `GatewayTurnPage` is what the observe page uses: a cursor over every retained turn, with no silent 128 cap. Each saved turn can record only the messages that were not already stored (`delta`); a prefix that does not match is kept and marked `prefix_reset` rather than merged by guesswork. Usage figures on a turn are a snapshot of that request. Unknown prices and context windows stay unknown.
+
 The Sessions page offers an explicit, default-off recording switch. Confirmation
 discloses that prompts, replies and tool results can contain private files and
 code. The switch is a card above the session list that says what is kept and

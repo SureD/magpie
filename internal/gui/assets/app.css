@@ -653,6 +653,8 @@ body:not(.side-nav) .side-toggle .st-pane { opacity: 0; }
    layout.js measures it into --bar, again on a resize (a text-size zoom
    comes as one) */
 .view { flex: 1; min-height: 0; overflow-y: scroll; padding: 0 max(0px, calc(12px - var(--bar, 0px))) 4px 12px; display: flex; flex-direction: column; animation: view-in .24s var(--ease); }
+#view-observe { padding: 0; overflow: hidden; }
+#view-observe iframe { flex: 1; width: 100%; border: 0; background: transparent; }
 /* a box that scrolls in a page, marked by app.js while it overflows: the
    wheel at its ends stays with it (contain keeps the Mac's bounce on it).
    Only then: Chromium holds the wheel even in a box that doesn't overflow.

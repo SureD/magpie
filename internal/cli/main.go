@@ -57,6 +57,10 @@ const usage = `magpie — one place to pick every agent's model
                                   behind a reverse proxy, MAGPIE_WEB_URL=https://<the page there> prints the link through it
                                   --gateway: gateway mode, no Agents, Sessions or Library (on by itself with no agents here; Settings › General turns it off)
                                   --tls-cert/--tls-key: the page and the gateway over https:// to other computers
+  magpie observe [--addr host:port] [--lan]
+                                  web-first proxy plus session viewer (Chinese UI). Does not start
+                                  memory, skill sync, library hub, or the desktop shell.
+                                  Binds 127.0.0.1:3431 unless --addr/--lan. MAGPIE_OBSERVE_KEY keeps the page key.
   magpie ls                       list detected agents and their settings
   magpie <agent>                  show one agent
   magpie <agent> <model>          set an agent's model   e.g. magpie claude deepseek/deepseek-chat
@@ -490,39 +494,53 @@ func run(args []string) error {
 	// written again when the backend's list changes
 	agent.CodexDesktopList = gateway.CodexDesktopCatalog
 	gateway.CodexDesktopChanged = agent.SyncCatalogSoon
-	// the setup kept the same on every computer, by whichever serves
-	gateway.WhileServing = append(gateway.WhileServing, davsync.Run)
-	// and the setup backed up into a folder here by itself (jwaitq)
-	gateway.WhileServing = append(gateway.WhileServing, backup.RunAuto)
-	// and dsh's patch lists, which dsh reads live: a route left behind by
-	// something else writing the file fails every session there until
-	// magpie writes its own list again
-	gateway.WhileServing = append(gateway.WhileServing, agent.KeepDshWired)
-	// and Cursor Private Inference's variables, which the Mac's launchd
-	// forgets at a restart, for the gateway's address now
-	gateway.WhileServing = append(gateway.WhileServing, agent.KeepCursorLocalEnv)
-	// and magpie's models in OpenMausBot's engine, which OpenMausBot
-	// writes back as it held them when an engine is changed in it
-	gateway.WhileServing = append(gateway.WhileServing, agent.KeepOpenMausBotListed)
-	// and Claude Science's daemon, which a restart of the computer ends,
-	// started on the gateway again while it is connected
-	gateway.WhileServing = append(gateway.WhileServing, agent.KeepClaudeScience)
-	// and every agent's own telemetry off while Settings › Privacy says so,
-	// an agent found since too
-	gateway.WhileServing = append(gateway.WhileServing, agent.KeepTelemetryAllOff)
-	// and the Claude Code magpie downloaded for a machine with none (a
-	// server's, a container's), at Claude Code's newest release: its runs
-	// turn its own updater off
-	gateway.WhileServing = append(gateway.WhileServing, claudecode.KeepCurrent)
-	// and the library's skills from GitHub and git repositories, fetched
-	// again by themselves when that is switched on (0xYaCo on X)
-	gateway.WhileServing = append(gateway.WhileServing, library.KeepSkillsCurrent)
-	// and the request archive, when it is on, goes to the bucket sync is to
-	gateway.ArchiveBucket = func() (gateway.Putter, bool) {
-		if b, ok := davsync.S3Bucket(); ok {
-			return b, true
+	// Only a real `magpie observe` (not `observe --help`, which returned
+	// above) turns off the product loops. Setting it earlier made
+	// `observe --help` in the CLI tests disable memory and image tools
+	// for every later test in the process.
+	if len(args) > 0 && args[0] == "observe" {
+		gateway.ObserveEdition = true
+	}
+	// the setup kept the same on every computer, by whichever serves.
+	// magpie observe is the trimmed edition: it does not sync skills,
+	// rewrite other agents, or back itself up while it serves.
+	if !gateway.ObserveEdition {
+		gateway.WhileServing = append(gateway.WhileServing, davsync.Run)
+		// and the setup backed up into a folder here by itself (jwaitq)
+		gateway.WhileServing = append(gateway.WhileServing, backup.RunAuto)
+		// and dsh's patch lists, which dsh reads live: a route left behind by
+		// something else writing the file fails every session there until
+		// magpie writes its own list again
+		gateway.WhileServing = append(gateway.WhileServing, agent.KeepDshWired)
+		// and Cursor Private Inference's variables, which the Mac's launchd
+		// forgets at a restart, for the gateway's address now
+		gateway.WhileServing = append(gateway.WhileServing, agent.KeepCursorLocalEnv)
+		// and magpie's models in OpenMausBot's engine, which OpenMausBot
+		// writes back as it held them when an engine is changed in it
+		gateway.WhileServing = append(gateway.WhileServing, agent.KeepOpenMausBotListed)
+		// and Claude Science's daemon, which a restart of the computer ends,
+		// started on the gateway again while it is connected
+		gateway.WhileServing = append(gateway.WhileServing, agent.KeepClaudeScience)
+		// and every agent's own telemetry off while Settings › Privacy says so,
+		// an agent found since too
+		gateway.WhileServing = append(gateway.WhileServing, agent.KeepTelemetryAllOff)
+		// and the Claude Code magpie downloaded for a machine with none (a
+		// server's, a container's), at Claude Code's newest release: its runs
+		// turn its own updater off
+		gateway.WhileServing = append(gateway.WhileServing, claudecode.KeepCurrent)
+		// and the library's skills from GitHub and git repositories, fetched
+		// again by themselves when that is switched on (0xYaCo on X)
+		gateway.WhileServing = append(gateway.WhileServing, library.KeepSkillsCurrent)
+	}
+	// and the request archive, when it is on, goes to the bucket sync is to.
+	// The observe edition does not attach that bucket.
+	if !gateway.ObserveEdition {
+		gateway.ArchiveBucket = func() (gateway.Putter, bool) {
+			if b, ok := davsync.S3Bucket(); ok {
+				return b, true
+			}
+			return nil, false
 		}
-		return nil, false
 	}
 	if len(args) == 0 {
 		if hasGUI {
@@ -552,6 +570,8 @@ func run(args []string) error {
 		return runTUI()
 	case "web":
 		return webCmd(args[1:])
+	case "observe":
+		return observeCmd(args[1:])
 	case "app", "gui":
 		// `magpie gui settings`: the window on that tab, as a restart to
 		// update from it comes back (update.RelaunchArgs)

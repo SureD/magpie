@@ -338,6 +338,7 @@ var notYet = map[string]string{
 	"POST /api/settings/workbuddy-checkin":       S2, // api.go
 	"POST /api/usage/arrange":                    W,  // api.go
 	"POST /api/warm-now":                         A,  // api.go
+	"POST /api/warm-all":                         A,  // api.go: warm every account in use; the window's button, no CLI yet
 	"POST /api/window/{action}":                  W,  // api.go
 	"GET /api/autobackup":                        S2, // backup.go: Back up by itself
 	"POST /api/autobackup/{action}":              S2, // backup.go

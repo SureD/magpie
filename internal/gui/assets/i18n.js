@@ -4,6 +4,7 @@
 // works. {name} slots are filled by t(str, vars).
 const I18N = {
   zh: {
+    "Conversations": "会话记录",
     "Calls": "调用次数",
     "Cards": "卡片",
     "Table": "表格",
@@ -5325,6 +5326,7 @@ const I18N = {
     "runs everything without asking": "所有操作都直接运行，不询问",
   },
   "zh-TW": {
+    "Conversations": "工作階段記錄",
     "Calls": "呼叫次數",
     "Cards": "卡片",
     "Table": "表格",
@@ -10630,6 +10632,7 @@ const I18N = {
     "runs everything without asking": "所有操作都直接執行，不詢問",
   },
   ja: {
+    "Conversations": "会話の記録",
     "Calls": "呼び出し数",
     "Cards": "カード",
     "Table": "表",
@@ -15937,6 +15940,7 @@ const I18N = {
     "runs everything without asking": "すべて確認せずに実行する",
   },
   de: {
+    "Conversations": "Gespräche",
     "Calls": "Aufrufe",
     "Cards": "Karten",
     "Table": "Tabelle",

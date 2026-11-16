@@ -293,6 +293,9 @@ const hubBody = 4 << 20
 const errHubOff = "magpie's MCP hub is off, so it runs no server's tools: turn it on in magpie's Library → MCP"
 
 func (s *Server) hubMCP(w http.ResponseWriter, r *http.Request) {
+	if editionRefuses(w, "the library hub") {
+		return
+	}
 	agent := r.PathValue("agent")
 	if r.Header.Get(RouterHeader) != "" {
 		r = r.WithContext(WithRouter(r.Context()))

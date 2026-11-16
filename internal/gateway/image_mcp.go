@@ -215,6 +215,9 @@ var imageFilesDir = sync.OnceValue(func() string {
 })
 
 func (s *Server) imageMCP(w http.ResponseWriter, r *http.Request) {
+	if editionRefuses(w, "image generation") {
+		return
+	}
 	serveMCP(w, r, "magpie's image generation", imageServerName, visionMCPBody, s.imageMCPCall)
 }
 

@@ -39,6 +39,9 @@ var toolsOn = plugin.ToolsOn
 
 // ownMCP are magpie's own MCP servers that are on now.
 func ownMCP() []OwnMCP {
+	if ObserveEdition {
+		return nil
+	}
 	out := []OwnMCP{}
 	if canSearch() {
 		out = append(out, OwnMCP{"magpie-web-search", "Magpie Web Search", SearchMCPPath})

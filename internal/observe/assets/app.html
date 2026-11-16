@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Magpie 观测</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f6f4ef; --ink:#1c1915; --muted:#6b645c; --line:#e4ddd2; --card:#fffdf8; --accent:#9a3412; --ok:#166534; --bad:#9f1239; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#171512; --ink:#f5f0e8; --muted:#b5ab9f; --line:#3a342c; --card:#221f1b; --accent:#fdba74; --ok:#86efac; --bad:#fda4af; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 "Iowan Old Style", Palatino, "Songti SC", "Noto Serif SC", serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; gap:1rem; align-items:center; padding:0.8rem 1.2rem; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); }
+  h1 { font-size:1.15rem; margin:0; font-weight:600; }
+  nav { display:flex; gap:0.4rem; }
+  button, .btn { font:inherit; border:1px solid var(--line); background:var(--card); color:inherit; border-radius:999px; padding:0.25rem 0.8rem; cursor:pointer; }
+  button[aria-pressed="true"] { background:var(--ink); color:var(--bg); }
+  main { display:grid; grid-template-columns:320px 1fr; min-height:calc(100vh - 58px); }
+  aside, section { padding:1rem 1.2rem; }
+  aside { border-right:1px solid var(--line); }
+  .muted { color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:0.8rem 1rem; margin:0.6rem 0; }
+  label { display:block; font-size:0.85rem; color:var(--muted); margin-top:0.4rem; }
+  input, select, textarea { width:100%; font:inherit; padding:0.35rem 0.5rem; border:1px solid var(--line); border-radius:8px; background:transparent; color:inherit; }
+  .row { display:flex; gap:0.5rem; flex-wrap:wrap; align-items:end; }
+  .row > * { flex:1; }
+  .session { width:100%; text-align:left; border-radius:10px; margin:0.3rem 0; }
+  .pill { display:inline-block; border-radius:999px; padding:0 0.45rem; font-size:0.75rem; border:1px solid var(--line); }
+  .bad { color:var(--bad); } .ok { color:var(--ok); }
+  .msg { white-space:pre-wrap; word-break:break-word; }
+  .tool { font-family:ui-monospace, monospace; font-size:0.85rem; }
+  table { width:100%; border-collapse:collapse; font-size:0.85rem; }
+  th, td { border-bottom:1px solid var(--line); text-align:left; padding:0.3rem 0.4rem; vertical-align:top; }
+  .bar { height:8px; background:var(--line); border-radius:99px; overflow:hidden; }
+  .bar > span { display:block; height:100%; background:var(--accent); }
+  .warn { border-left:3px solid var(--accent); padding-left:0.6rem; }
+  @media (max-width:900px) { main { grid-template-columns:1fr; } aside { border-right:0; border-bottom:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Magpie 观测</h1>
+  <nav>
+    <button type="button" data-view="sessions" aria-pressed="true">会话</button>
+    <button type="button" data-view="trends">趋势</button>
+    <button type="button" data-view="providers">连接</button>
+    <button type="button" data-view="settings">记录</button>
+  </nav>
+  <span class="muted" id="gw"></span>
+</header>
+<main>
+  <aside id="side"></aside>
+  <section id="view"></section>
+</main>
+<script>
+const $ = (s, r=document) => r.querySelector(s);
+const esc = (s) => String(s ?? "");
+const pageQuery = new URLSearchParams(location.search);
+const API = pageQuery.get("api") || "/api";
+const embedded = pageQuery.has("embed");
+async function api(path, opt) {
+  const url = API + path.replace(/^\/api/, "");
+  const res = await fetch(url, Object.assign({headers:{"Content-Type":"application/json"}, credentials:"same-origin"}, opt));
+  const text = await res.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = {error:text}; }
+  if (!res.ok) throw new Error((body && body.error) || text || res.status);
+  return body;
+}
+let boot = null, current = null, viewName = "sessions";
+function pill(text, cls="") { const s = document.createElement("span"); s.className = "pill "+cls; s.textContent = text; return s; }
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+
+async function loadSessions() {
+  const p = new URLSearchParams();
+  for (const id of ["agent","project","q","from","to"]) {
+    const v = $("#f-"+id); if (v && v.value) p.set(id, v.value);
+  }
+  const data = await api("/api/sessions?"+p.toString());
+  const side = $("#side"); side.replaceChildren();
+  side.append(el("p","muted","会话来自客户端声明的 ID。没有正文表示当时没打开记录，或正文已按保留策略清掉。"));
+  const form = el("div","card");
+  form.innerHTML = `<label>Agent</label><input id="f-agent" placeholder="留空为全部">
+    <label>项目（仅 X-Magpie-Project）</label><input id="f-project">
+    <label>从</label><input id="f-from" type="date"><label>到</label><input id="f-to" type="date">
+    <label>标题 / ID</label><input id="f-q"><p></p>`;
+  const go = el("button",null,"筛选"); go.onclick = () => loadSessions().catch(showErr);
+  form.append(go); side.append(form);
+  if (!data.sessions.length) side.append(el("p",null,"没有会话。"));
+  for (const s of data.sessions) {
+    const b = el("button","session");
+    b.append(el("strong",null,s.title || s.id));
+    b.append(el("div","muted",s.agent+(s.project?" · "+s.project:"")+" · "+(s.last||"").slice(0,16)));
+    const bits = el("div");
+    if (!s.text) bits.append(pill("无正文"));
+    if (!s.usage_known) bits.append(pill("用量未知"));
+    if (s.incomplete) bits.append(pill("有未完成","bad"));
+    if (s.failed) bits.append(pill("有失败","bad"));
+    b.append(bits);
+    b.onclick = () => openSession(s);
+    side.append(b);
+  }
+}
+
+function showErr(e) { $("#view").replaceChildren(el("p","bad",e.message||String(e))); }
+
+async function openSession(s) {
+  current = s;
+  const view = $("#view");
+  view.replaceChildren(el("h2",null,s.title || s.id), el("p","muted",s.agent+" / "+s.id+(s.project?" / 项目 "+s.project:"")));
+  const tools = el("div","row");
+  const exp = el("a","btn","导出 Markdown"); exp.href = "/api/export?agent="+encodeURIComponent(s.agent)+"&id="+encodeURIComponent(s.id)+"&format=md";
+  const js = el("a","btn","导出 JSONL"); js.href = "/api/export?agent="+encodeURIComponent(s.agent)+"&id="+encodeURIComponent(s.id)+"&format=jsonl";
+  tools.append(exp, js);
+  view.append(tools);
+  const stats = el("div","card");
+  stats.append(el("p",null,"账本累计（各次请求相加，不是上下文长度）"));
+  if (!s.usage_known) stats.append(el("p","warn","用量账本里没有这个会话。下面的 0 不表示发生过零 token 的调用。"));
+  else {
+    stats.append(el("p",null,`输入 ${s.billed_input} · 输出 ${s.output} · 缓存读 ${s.cache_read} · 缓存写 ${s.cache_write}`+(s.unpriced?` · ${s.unpriced} 次费用未知`:"")));
+    if (s.cost) stats.append(el("p",null,"已知费用合计 "+s.cost));
+  }
+  view.append(stats);
+  const talk = el("div"); talk.id = "talk"; view.append(talk);
+  const more = el("button",null,"更早的轮次"); more.id = "more"; more.hidden = true;
+  view.append(more);
+  let before = "", beforeId = "";
+  async function page(append) {
+    const p = new URLSearchParams({agent:s.agent, id:s.id, limit:"40"});
+    if (before) { p.set("before", before); p.set("before_id", beforeId); }
+    const data = await api("/api/turns?"+p);
+    const box = append ? talk : talk;
+    if (!append) box.replaceChildren();
+    if (!data.turns.length && !append) box.append(el("p","muted","保留期内没有对话正文。"));
+    const frag = document.createDocumentFragment();
+    for (const t of data.turns) frag.append(renderTurn(t));
+    if (append) box.prepend(frag); else box.append(frag);
+    more.hidden = !data.has_more;
+    if (data.has_more) { before = data.next_before; beforeId = data.next_before_id || ""; }
+  }
+  more.onclick = () => page(true).catch(showErr);
+  await page(false);
+  const series = await api("/api/series?agent="+encodeURIComponent(s.agent)+"&id="+encodeURIComponent(s.id));
+  view.append(renderSeries(series, "这个会话"));
+}
+
+function renderTurn(t) {
+  const card = el("article","card");
+  const head = el("p","muted",(t.time||"")+" · HTTP "+(t.status||"?")+(t.model?" · "+t.model:"")+(t.id?" · "+t.id:""));
+  card.append(head);
+  const flags = el("p");
+  if (t.normalized) flags.append(pill("规范化，不是原文"));
+  if (t.delta) flags.append(pill("已折叠此前 "+(t.replayed||0)+" 段"));
+  if (t.incomplete) flags.append(pill("未完成","bad"));
+  if (t.cancelled) flags.append(pill("已取消","bad"));
+  if (t.cut) flags.append(pill("有截断","bad"));
+  (t.omissions||[]).forEach(c => flags.append(pill(omitText(c))));
+  card.append(flags);
+  for (const p of (t.input||[]).concat(t.output||[])) card.append(renderPart(p));
+  if (t.usage) card.append(renderUsage(t.usage, t));
+  else card.append(el("p","warn","这次请求没有用量快照（可能在记账之前就失败了）。不把缺失写成 0。"));
+  return card;
+}
+function omitText(c) {
+  return ({truncated:"文本被截断", prefix_reset:"上下文与已保存前缀不一致", chain_dropped:"前缀折叠链已满", input_cap:"输入超过 8 MiB", images_placeholder:"图片仅为占位", incomplete:"流未完整结束", cancelled:"调用被取消", normalized:"经过规范化"})[c] || c;
+}
+function renderPart(p) {
+  const d = el("div","msg");
+  const who = el("div","muted",(p.role||"")+(p.kind&&p.kind!=="text"?" / "+p.kind:"")+(p.name?" "+p.name:"")+(p.cut?" · 省略 "+p.cut+" 字":""));
+  d.append(who);
+  const body = el("div", p.kind==="tool_use"||p.kind==="tool_result"||p.role==="tool" ? "tool" : "");
+  body.textContent = p.text || "";
+  d.append(body);
+  return d;
+}
+function renderUsage(u, t) {
+  const d = el("div","card");
+  d.append(el("strong",null,"这一次请求"));
+  const inn = Number(u.in ?? 0), outn = Number(u.out ?? 0);
+  const ctx = u.context_known ? (inn+" / 窗口 "+u.context+"（"+u.context_source+"）") : (inn+" / 窗口未知");
+  d.append(el("p",null,"输入上下文 "+ctx));
+  d.append(el("p","muted","这是本次提示词 token，不是把历史上每次输入加总。"));
+  let line = `输出 ${outn} · 缓存读 ${u.cache_read} · 缓存写 ${u.cache_write}`;
+  if (u.cache_unknown) line += " · 厂商未报告缓存";
+  d.append(el("p",null,line));
+  d.append(el("p",null,u.cost_known ? ("费用 "+u.cost) : "费用未知（没有价格元数据）"));
+  if (u.ms) d.append(el("p",null,"延迟 "+u.ms+" ms"+(u.ttft_ms?" · 首 token "+u.ttft_ms+" ms":"")));
+  if (t.rid) d.append(el("p","muted","上游请求 "+t.rid));
+  if (u.context_known && u.context > 0) {
+    const bar = el("div","bar"); const span = document.createElement("span");
+    span.style.width = Math.min(100, Math.round(100*inn/u.context))+"%";
+    bar.append(span); d.append(bar);
+    d.append(el("p","muted","上图是这一次输入占窗口的比例。"));
+  }
+  return d;
+}
+function renderSeries(data, title) {
+  const box = el("div","card");
+  box.append(el("h3",null,title+"的 token 趋势"));
+  box.append(el("p","warn",data.note));
+  if (!data.buckets.length) box.append(el("p","muted","这段范围没有账本记录。"));
+  const max = Math.max(1, ...data.buckets.map(b => b.billed_input+b.output));
+  for (const b of data.buckets) {
+    const row = el("div");
+    row.append(el("div",null,(b.start||"").slice(0,13)+" · 请求 "+b.calls+" · 失败 "+b.failures+" · 取消 "+b.cancelled));
+    row.append(el("div","muted","累计输入 "+b.billed_input+" · 输出 "+b.output+" · 缓存读 "+b.cache_read+" · 缓存写 "+b.cache_write+(b.cost_known_calls?" · 已知费用 "+b.cost:"")+(b.cost_unknown_calls?" · 费用未知 "+b.cost_unknown_calls+" 次":"")));
+    const bar = el("div","bar"); const span = document.createElement("span");
+    span.style.width = Math.round(100*(b.billed_input+b.output)/max)+"%";
+    bar.append(span); row.append(bar); box.append(row);
+  }
+  if (data.calls && data.calls.length) {
+    box.append(el("h3",null,"单次输入上下文"));
+    const table = document.createElement("table");
+    table.innerHTML = "<tr><th>时间</th><th>输入上下文</th><th>窗口</th><th>输出</th><th>缓存读/写</th><th>延迟</th><th>状态</th><th>费用</th></tr>";
+    for (const c of data.calls.slice(-80)) {
+      const tr = document.createElement("tr");
+      const cells = [
+        (c.t||"").slice(0,19),
+        String(c.input_context),
+        c.context_known ? (c.context_window+" "+c.context_source) : "未知",
+        String(c.output),
+        c.cache_read+" / "+c.cache_write,
+        c.ms ? c.ms+" ms" : "",
+        c.cancelled ? "取消" : String(c.status),
+        c.cost_known ? String(c.cost) : "未知"
+      ];
+      for (const text of cells) { const td = document.createElement("td"); td.textContent = text; tr.append(td); }
+      table.append(tr);
+    }
+    box.append(table);
+  }
+  return box;
+}
+
+async function showTrends() {
+  $("#side").replaceChildren(el("p","muted","全局趋势来自用量账本，包括没打开正文记录时的调用。没有会话 ID 的调用会计入全局，但不会被并成一段对话。"));
+  const data = await api("/api/series?bucket=day");
+  $("#view").replaceChildren(renderSeries(data, "全部调用"));
+}
+async function showProviders() {
+  $("#side").replaceChildren(el("p","muted","这里只保存连接。不会为了测试去调用模型。密钥只写入本机 providers.json，接口不再把它读回来。"));
+  const data = await api("/api/providers");
+  const view = $("#view"); view.replaceChildren(el("h2",null,"模型连接"));
+  for (const p of data.providers) {
+    const c = el("div","card");
+    c.append(el("strong",null,p.name+" ("+p.id+")"));
+    c.append(el("p","muted",[p.chat&&"chat", p.responses&&"responses", p.anthropic&&"anthropic", p.gemini&&"gemini"].filter(Boolean).join(" · ") || "无 URL"));
+    c.append(el("p",null,(p.has_key?"已保存密钥":"没有密钥")+(p.context?" · 你填写的窗口 "+p.context:"")));
+    if (p.models && p.models.length) c.append(el("p","muted",p.models.join(", ")));
+    view.append(c);
+  }
+  const form = el("form","card");
+  form.innerHTML = `<h3>添加 API</h3>
+    <label>名称</label><input name="name" required placeholder="例如 desk-relay">
+    <label>协议</label><select name="protocol"><option value="chat">OpenAI Chat</option><option value="responses">OpenAI Responses</option><option value="anthropic">Anthropic Messages</option><option value="gemini">Gemini</option></select>
+    <label>Base URL</label><input name="base_url" required placeholder="https://example.test/v1">
+    <label>API Key</label><input name="key" type="password" required>
+    <label>模型 ID（逗号分隔）</label><input name="models" placeholder="demo-model">
+    <label>上下文窗口（可选，你填写的数字，不是测量值）</label><input name="context" inputmode="numeric" placeholder="留空表示未知">
+    <p></p><button type="submit">保存到本机</button>`;
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    const body = {name:fd.get("name"), protocol:fd.get("protocol"), base_url:fd.get("base_url"), key:fd.get("key"),
+      models:String(fd.get("models")||"").split(",").map(s=>s.trim()).filter(Boolean)};
+    const n = Number(fd.get("context")); if (n>0) body.context = n;
+    try { await api("/api/providers",{method:"POST", body:JSON.stringify(body)}); form.reset(); showProviders(); }
+    catch(e) { showErr(e); }
+  };
+  view.append(form);
+}
+async function showSettings() {
+  $("#side").replaceChildren();
+  const b = boot;
+  const view = $("#view"); view.replaceChildren(el("h2",null,"记录与保留"));
+  const limits = el("div","card warn");
+  (b.limits||[]).forEach(t => limits.append(el("p",null,t)));
+  view.append(limits);
+  const cur = b.retention || {};
+  const form = el("form","card");
+  form.innerHTML = `<p>当前：${b.recording?"记录已打开":"记录关闭（默认）"}。${cur.note||""}</p>
+    <label>确认语（打开记录或清除正文时原样填写）</label>
+    <input name="confirm" placeholder="${esc(b.confirm_phrase)}">
+    <p class="muted">确认语：${esc(b.confirm_phrase)}</p>
+    <label>保留天数（0 = 不按时间删除）</label><input name="days" value="${cur.forever?0:cur.days}">
+    <label>总容量 MiB（0 = 不按容量删除）</label><input name="store_mb" value="${cur.store_unlimited?0:cur.store_mb}">
+    <label>单日单会话 MiB（0 = 不限制该文件；单轮仍最多 1 MiB）</label><input name="session_mb" value="${cur.session_unlimited?0:cur.session_mb}">
+    <label><input type="checkbox" name="on" ${b.recording?"checked":""}> 记录可识别会话的对话正文</label>
+    <label><input type="checkbox" name="shorten"> 我确认收紧保留策略可以删掉更早的正文</label>
+    <label><input type="checkbox" name="clear"> 清除已保存的正文（用量账本不动）</label>
+    <p></p><button type="submit">保存</button>`;
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    const body = {on: fd.get("on")==="on", clear: fd.get("clear")==="on", confirm: fd.get("confirm")||"",
+      confirm_shorten: fd.get("shorten")==="on", days: Number(fd.get("days")), store_mb: Number(fd.get("store_mb")), session_mb: Number(fd.get("session_mb"))};
+    try { boot = await api("/api/recording",{method:"POST", body:JSON.stringify(body)}); showSettings(); }
+    catch(e) { showErr(e); }
+  };
+  view.append(form);
+  const search = el("form","card");
+  search.innerHTML = `<h3>搜索已保存正文</h3><label>至少两个字</label><input name="q"><p></p><button>搜索</button><div id="hits"></div>`;
+  search.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const q = new FormData(search).get("q");
+    const data = await api("/api/search?q="+encodeURIComponent(q));
+    const box = $("#hits"); box.replaceChildren();
+    if (data.cut) box.append(el("p","warn","结果被篇幅上限截断。"));
+    if (!data.hits.length) box.append(el("p","muted","没有匹配。"));
+    for (const h of data.hits) {
+      const p = el("p"); p.append(el("strong",null,h.agent+" / "+h.session)); p.append(document.createTextNode(" "+(h.snippet||"")));
+      box.append(p);
+    }
+  };
+  view.append(search);
+}
+
+async function bootUI() {
+  boot = await api("/api/bootstrap");
+  if (embedded) {
+    document.querySelector("header").hidden = true;
+    const note = el("p", "card warn");
+    note.textContent = "供应商、模型、Base URL 和密钥在这个窗口左侧的 Providers 里设置，和原来的 Magpie 一样。这里只记录会话、查看对话和用量。网关已经由这个应用在本机启动，不需要另开一个页面或复制密钥。";
+    const open = el("button", null, "打开 Providers");
+    open.onclick = () => { try { parent.show("providers"); } catch (e) { /* standalone */ } };
+    note.append(open);
+    $("#view").before(note);
+  }
+  $("#gw").textContent = boot.gateway ? "网关 "+boot.gateway : "";
+  document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+    document.querySelectorAll("nav button").forEach(x => x.setAttribute("aria-pressed", x===b));
+    viewName = b.dataset.view;
+    const run = {sessions: loadSessions, trends: showTrends, providers: showProviders, settings: showSettings}[viewName];
+    run().catch(showErr);
+  });
+  if (embedded && boot && !boot.recording) showSettings().catch(showErr);
+  else loadSessions().catch(showErr);
+}
+bootUI().catch(showErr);
+</script>
+</body>
+</html>
