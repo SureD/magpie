@@ -8,10 +8,27 @@
 
 不需要安装 Go，也不需要打开终端。
 
-1. 在本仓库的 Actions 里打开 **macOS app (unsigned)**，下载产物 `magpie-darwin-arm64-unsigned`（`.zip` 或 `.dmg`）。这是 **Apple Silicon（arm64）** 的桌面应用。它**没有签名，也没有公证**。
-2. 打开 zip 或磁盘映像，把 `magpie.app` 拖到「应用程序」。
-3. 双击 `magpie.app`。窗口会打开。它和上游 Magpie 一样也住在菜单栏里。
-4. 第一次打开时，macOS 会因为应用未签名而拦住。在 `magpie.app` 上**按住 Control 再点「打开」**，这是系统对这一个应用的确认。不要关闭整台 Mac 的 Gatekeeper，也不要执行 `spctl --master-disable`。
+1. 在本仓库的 Actions 里打开 **macOS app (unsigned)**，下载产物 `magpie-darwin-arm64-unsigned`。里面是 `.zip`、`.dmg` 和说明。这是 **Apple Silicon（arm64）** 的桌面应用。
+2. 用访达打开里面的 zip，或打开 dmg，把 `magpie.app` 拖到「应用程序」。不要再用别的工具把 `.app` 重新压缩一遍。
+3. 这个应用有**临时签名**（ad-hoc，`codesign --sign -`），只用来保证包是完整的。它**没有** Developer ID 证书，也**没有公证**。macOS 不会把它当成已公证软件。
+4. 第一次打开会被拦住。这是未公证应用的正常结果，不是要求你关闭 Gatekeeper。按 Apple 的做法，只放行这一个应用（[打开来自身份不明开发者的 Mac App](https://support.apple.com/zh-cn/guide/mac-help/mh40616/mac)）：先打开一次，在提示上点「完成」，再到「系统设置 → 隐私与安全性」里对 magpie 点「仍要打开」。也可以按住 Control 再点 `magpie.app`，选「打开」。不要执行 `spctl --master-disable`。
+5. 窗口会打开，应用也住在菜单栏里。
+
+若系统说 **「magpie 已损坏，无法打开，请移到废纸篓」**，并且「隐私与安全性」里没有「仍要打开」，先确认这个副本的签名，不要先改系统策略：
+
+```sh
+codesign --verify --deep --strict --verbose=2 /Applications/magpie.app
+codesign -dv --verbose=4 /Applications/magpie.app
+spctl --assess --verbose=4 --type execute /Applications/magpie.app
+```
+
+`valid on disk`、`Signature=adhoc`、`TeamIdentifier=not set` 表示文件没有损坏。这时 `spctl` 拒绝（例如 `no usable signature`）是未公证的预期结果。签名完好但仍然没有「仍要打开」时，只去掉这一个应用的下载标记后再打开：
+
+```sh
+xattr -dr com.apple.quarantine /Applications/magpie.app
+```
+
+这不改变其他应用。`sealed resource is missing`、`invalid signature` 或 `linker-signed` 才表示这个副本的封条坏了：重新下载，并用访达解压，不要用会改写包内容的压缩工具。
 
 窗口左侧仍是原来的导航：
 
@@ -21,14 +38,14 @@
 
 网关由这个应用在本机启动（默认 `127.0.0.1:3425`）。把应用的 base URL 指到它即可。
 
-这个构建不是 GitHub Release，也不会自动更新。产物在 Actions 里大约保留 14 天。Linux 上的编译不能代替这台 Mac 的安装包，也不能做签名。
+这个构建不是 GitHub Release，也不会自动更新。产物在 Actions 里大约保留 14 天。Linux 上的编译不能代替这台 Mac 的安装包，也不能做临时签名或公证。
 
 ## 给开发者
 
 编译桌面应用需要在对应系统上构建（macOS 应用要在 Mac 上编，因为要链接系统 WebKit）。Go 版本见 `go.mod`。
 
 ```sh
-make app          # 当前 Mac 上的 magpie.app（未签名）
+make app          # 当前 Mac 上的 magpie.app（临时签名，未公证）
 make cli          # 只有终端的 magpie，没有窗口
 ```
 

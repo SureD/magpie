@@ -73,6 +73,11 @@ test-ui:
 	node --test --test-concurrency=$(UI_TEST_CONCURRENCY) $(UI_TESTS)
 
 # macOS bundle: menu bar app with no Dock icon (LSUIElement).
+# Go's linker ad-hoc-signs the executable before this bundle exists
+# (flags adhoc,linker-signed, identifier a.out, no CodeResources). Gatekeeper
+# then calls a downloaded copy damaged and offers no Open Anyway. Sealing the
+# finished bundle replaces that. The seal is ad-hoc only: not a Developer ID
+# and not notarization.
 app: build-release
 	@rm -rf magpie.app
 	@mkdir -p magpie.app/Contents/MacOS magpie.app/Contents/Resources
@@ -81,7 +86,13 @@ app: build-release
 	@cp build/darwin/Assets.car magpie.app/Contents/Resources/Assets.car
 	@cp THIRD_PARTY_NOTICES magpie.app/Contents/Resources/THIRD_PARTY_NOTICES
 	@sed 's/@VERSION@/$(VERSION)/' build/darwin/Info.plist > magpie.app/Contents/Info.plist
-	@echo "  magpie.app"
+	@if [ "$$(uname -s)" != Darwin ]; then \
+		echo "make app: the bundle is sealed with codesign, which needs macOS" >&2; \
+		exit 1; \
+	fi
+	@codesign --force --sign - magpie.app
+	@codesign --verify --deep --strict magpie.app
+	@echo "  magpie.app (ad-hoc seal, not notarized)"
 
 icons:
 	@go run build/icon/gen.go tray internal/gui/tray.png
