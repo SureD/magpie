@@ -5,6 +5,8 @@
 const I18N = {
   zh: {
     "Conversations": "会话记录",
+    "Custom": "定制",
+    "A custom mark means this fork added or changed it. Unmarked features are the original app.": "定制标记表示本分支新增或改动，未标记功能沿用原版",
     "Calls": "调用次数",
     "Cards": "卡片",
     "Table": "表格",
@@ -5328,6 +5330,8 @@ const I18N = {
   },
   "zh-TW": {
     "Conversations": "工作階段記錄",
+    "Custom": "自訂",
+    "A custom mark means this fork added or changed it. Unmarked features are the original app.": "自訂標記表示這個分支新增或改過，沒有標記的功能沿用原版",
     "Calls": "呼叫次數",
     "Cards": "卡片",
     "Table": "表格",
@@ -10635,6 +10639,8 @@ const I18N = {
   },
   ja: {
     "Conversations": "会話の記録",
+    "Custom": "独自",
+    "A custom mark means this fork added or changed it. Unmarked features are the original app.": "独自マークはこのフォークで追加または変更した部分です。マークのない機能は元のアプリのままです。",
     "Calls": "呼び出し数",
     "Cards": "カード",
     "Table": "表",
@@ -15944,6 +15950,8 @@ const I18N = {
   },
   de: {
     "Conversations": "Gespräche",
+    "Custom": "Eigen",
+    "A custom mark means this fork added or changed it. Unmarked features are the original app.": "Eine eigene Markierung bedeutet, dass dieser Fork sie hinzugefügt oder geändert hat. Unmarkierte Funktionen sind die ursprüngliche App.",
     "Calls": "Aufrufe",
     "Cards": "Karten",
     "Table": "Tabelle",

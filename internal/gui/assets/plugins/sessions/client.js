@@ -1422,8 +1422,9 @@ magpie.plugin("sessions", (ctx) => {
       out.push(said1);
     }
     if (got.tr?.cut) {
-      const more = el("button", "text", t("Show the rest of this conversation"));
+      const more = el("button", "text fork-mark", t("Show the rest of this conversation"));
       more.type = "button";
+      more.append(el("span", "fork-badge", t("Custom")));
       more.onclick = () => {
         more.disabled = true;
         const from = got.tr.next || 0;

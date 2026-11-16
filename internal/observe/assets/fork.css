@@ -1,0 +1,73 @@
+/* Marks a control this fork added or changed. It is not a user/assistant
+   colour and not the app's own accent. The word and the diamond stay
+   readable without the colour. */
+:root {
+  --fork: #0f6e6e;
+  --fork-soft: #e5f4f3;
+  --fork-ink: #083f3f;
+  --fork-line: #0f6e6e;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fork: #9ee4dc;
+    --fork-soft: #143330;
+    --fork-ink: #d7f7f3;
+    --fork-line: #7dcec8;
+  }
+}
+:root[data-theme="dark"] {
+  --fork: #9ee4dc;
+  --fork-soft: #143330;
+  --fork-ink: #d7f7f3;
+  --fork-line: #7dcec8;
+}
+:root[data-theme="light"] {
+  --fork: #0f6e6e;
+  --fork-soft: #e5f4f3;
+  --fork-ink: #083f3f;
+  --fork-line: #0f6e6e;
+}
+
+.fork-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28em;
+  margin-inline-start: 0.4em;
+  padding: 0.05em 0.4em;
+  border: 1px solid var(--fork-line);
+  border-radius: 999px;
+  background: var(--fork-soft);
+  color: var(--fork-ink);
+  font: 600 10px/1.45 ui-sans-serif, system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.fork-badge::before {
+  content: "";
+  width: 0.42em;
+  height: 0.42em;
+  border: 1.5px solid currentColor;
+  border-radius: 1px;
+  transform: rotate(45deg);
+  flex: none;
+}
+.fork-mark {
+  box-shadow: inset 3px 0 0 var(--fork-line);
+}
+#nav button.fork-nav > span[data-t] {
+  color: var(--fork-ink);
+}
+.fork-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.4rem 0 0.8rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px dashed var(--fork-line);
+  border-radius: 8px;
+  background: var(--fork-soft);
+  color: var(--fork-ink);
+  font: 13px/1.4 ui-sans-serif, system-ui, sans-serif;
+}
+.fork-legend .fork-badge { margin-inline-start: 0; }

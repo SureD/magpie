@@ -41,15 +41,17 @@ func TestShot(t *testing.T) {
 	}
 	srv := httptest.NewServer(Handler(""))
 	defer srv.Close()
-	out := "/tmp/synthetic-thread.png"
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "google-chrome", "--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage", "--window-size=1100,900", "--virtual-time-budget=4000", "--screenshot="+out, srv.URL+"/?open=app/synth")
-	cmd.Env = append(os.Environ(), "HOME="+t.TempDir())
-	b, err := cmd.CombinedOutput()
-	t.Logf("chrome: %v %s", err, b)
-	st, err := os.Stat(out)
-	if err != nil || st.Size() < 1000 {
-		t.Fatalf("screenshot: %v", err)
+	for _, theme := range []string{"light", "dark"} {
+		out := "/tmp/synthetic-thread-" + theme + ".png"
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		cmd := exec.CommandContext(ctx, "google-chrome", "--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage", "--window-size=1100,900", "--virtual-time-budget=5000", "--screenshot="+out, srv.URL+"/?open=app/synth&theme="+theme)
+		cmd.Env = append(os.Environ(), "HOME="+t.TempDir())
+		b, err := cmd.CombinedOutput()
+		cancel()
+		t.Logf("%s chrome: %v %s", theme, err, b)
+		st, statErr := os.Stat(out)
+		if statErr != nil || st.Size() < 1000 {
+			t.Fatalf("%s screenshot: %v", theme, statErr)
+		}
 	}
 }

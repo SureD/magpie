@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Magpie 观测</title>
+<link rel="stylesheet" href="/fork.css">
 <style>
   :root { color-scheme: light dark; --bg:#f6f4ef; --ink:#1c1915; --muted:#6b645c; --line:#e4ddd2; --card:#fffdf8; --accent:#9a3412; --ok:#166534; --bad:#9f1239; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#171512; --ink:#f5f0e8; --muted:#b5ab9f; --line:#3a342c; --card:#221f1b; --accent:#fdba74; --ok:#86efac; --bad:#fda4af; }
+    :root:not([data-theme="light"]) { --bg:#171512; --ink:#f5f0e8; --muted:#b5ab9f; --line:#3a342c; --card:#221f1b; --accent:#fdba74; --ok:#86efac; --bad:#fda4af; }
   }
+  :root[data-theme="dark"] { --bg:#171512; --ink:#f5f0e8; --muted:#b5ab9f; --line:#3a342c; --card:#221f1b; --accent:#fdba74; --ok:#86efac; --bad:#fda4af; }
   * { box-sizing: border-box; }
   body { margin:0; font:15px/1.5 "Iowan Old Style", Palatino, "Songti SC", "Noto Serif SC", serif; background:var(--bg); color:var(--ink); }
   header { display:flex; gap:1rem; align-items:center; padding:0.8rem 1.2rem; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); }
@@ -40,7 +42,7 @@
 </head>
 <body>
 <header>
-  <h1>Magpie 观测</h1>
+  <h1 class="fork-mark">Magpie 观测</h1>
   <nav>
     <button type="button" data-view="sessions" aria-pressed="true">会话</button>
     <button type="button" data-view="trends">趋势</button>
@@ -71,6 +73,34 @@ async function api(path, opt) {
 let boot = null, current = null, viewName = "sessions";
 function pill(text, cls="") { const s = document.createElement("span"); s.className = "pill "+cls; s.textContent = text; return s; }
 function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+const FORK = {
+  en: { badge: "Custom", legend: "A custom mark means this fork added or changed it. Unmarked features are the original app." },
+  zh: { badge: "定制", legend: "定制标记表示本分支新增或改动，未标记功能沿用原版" },
+  "zh-TW": { badge: "自訂", legend: "自訂標記表示這個分支新增或改過，沒有標記的功能沿用原版" },
+  ja: { badge: "独自", legend: "独自マークはこのフォークで追加または変更した部分です。マークのない機能は元のアプリのままです。" },
+  de: { badge: "Eigen", legend: "Eine eigene Markierung bedeutet, dass dieser Fork sie hinzugefügt oder geändert hat. Unmarkierte Funktionen sind die ursprüngliche App." }
+};
+function forkPack() {
+  let lang = "";
+  try { lang = (parent && parent !== window && parent.document.documentElement.lang) || ""; } catch (e) { lang = ""; }
+  lang = lang || pageQuery.get("lang") || document.documentElement.lang || navigator.language || "en";
+  const l = lang.toLowerCase();
+  if (l === "zh" || l.startsWith("zh-cn") || l.startsWith("zh-hans")) return FORK.zh;
+  if (l.startsWith("zh")) return FORK["zh-TW"];
+  if (l.startsWith("ja")) return FORK.ja;
+  if (l.startsWith("de")) return FORK.de;
+  return FORK.en;
+}
+function forkBadge() {
+  const b = el("span", "fork-badge", forkPack().badge);
+  b.title = forkPack().legend;
+  return b;
+}
+function heading(tag, text) {
+  const h = el(tag, "fork-mark", text);
+  h.append(forkBadge());
+  return h;
+}
 
 async function loadSessions() {
   const p = new URLSearchParams();
@@ -83,11 +113,12 @@ async function loadSessions() {
   side.append(note);
   if (boot && !boot.recording) side.append(el("p","warn","记录当前是关的。已经留下的正文仍可打开。关着的时候经过网关的新对话不会保存正文。"));
   if (embedded) {
-    const native = el("button",null,"本机 Agent 文件");
+    const native = el("button","fork-mark","本机 Agent 文件");
+    native.append(forkBadge());
     native.onclick = () => loadNativeList().catch(showErr);
     side.append(native);
   }
-  const form = el("div","card");
+  const form = el("div","card fork-mark");
   form.innerHTML = `<label>Agent</label><input id="f-agent" placeholder="留空为全部">
     <label>项目（仅 X-Magpie-Project）</label><input id="f-project">
     <label>从</label><input id="f-from" type="date"><label>到</label><input id="f-to" type="date">
@@ -113,7 +144,7 @@ async function loadSessions() {
 function showErr(e) { $("#view").replaceChildren(el("p","bad",e.message||String(e))); }
 
 function diagFor(s) {
-  const box = el("div","card");
+  const box = el("div","card fork-mark");
   box.append(el("p",null,"诊断"));
   box.append(el("p","muted","会话 ID "+s.agent+" / "+s.id+(s.project?" · 项目 "+s.project:"")));
   box.append(el("p", boot && boot.recording ? "ok" : "warn", boot && boot.recording ? "记录开着。新的、带会话 ID 的请求会留下正文。" : "记录关着。此后经过网关但没被记录的正文无法恢复。"));
@@ -143,7 +174,7 @@ function renderItem(it) {
 async function openSession(s) {
   current = s;
   const view = $("#view");
-  view.replaceChildren(el("h2",null,s.title || s.id), el("p","muted",s.agent+" / "+s.id+(s.project?" / 项目 "+s.project:"")));
+  view.replaceChildren(heading("h2", s.title || s.id), el("p","muted",s.agent+" / "+s.id+(s.project?" / 项目 "+s.project:"")));
   view.append(diagFor(s));
   const tools = el("div","row");
   const q = "agent="+encodeURIComponent(s.agent)+"&id="+encodeURIComponent(s.id);
@@ -152,8 +183,8 @@ async function openSession(s) {
   tools.append(exp, js);
   view.append(tools);
   const talk = el("div"); talk.id = "talk"; view.append(talk);
-  const more = el("button",null,"后面的轮次"); more.hidden = true;
-  const all = el("button",null,"加载全部保留轮次");
+  const more = el("button","fork-mark","后面的轮次"); more.hidden = true; more.append(forkBadge());
+  const all = el("button","fork-mark","加载全部保留轮次"); all.append(forkBadge());
   view.append(more, all);
   let from = 0, loading = false;
   async function page(append) {
@@ -180,7 +211,8 @@ async function openSession(s) {
     const native = el("div","card");
     native.append(el("p",null,"本机同 ID 的 Agent 原文"));
     native.append(el("p","muted","若这个 Agent 在这台电脑上写了自己的会话文件，并且 ID 相同，下面是那个文件。Magpie 不另存一份。文件里没有的内容这里也没有。"));
-    const b = el("button",null,"读取本机文件");
+    const b = el("button","fork-mark","读取本机文件");
+    b.append(forkBadge());
     b.onclick = () => readNative(s.agent, s.id, native).catch(showErr);
     native.append(b);
     view.append(native);
@@ -207,7 +239,8 @@ async function readNative(agent, id, host, from) {
   if (!host.contains(box)) host.append(box);
   for (const p of body.parts || []) box.append(renderItem(p));
   if (body.cut && body.next) {
-    const more = el("button",null,"继续读本机文件");
+    const more = el("button","fork-mark","继续读本机文件");
+    more.append(forkBadge());
     more.onclick = () => { more.remove(); readNative(agent, id, host, body.next).catch(showErr); };
     host.append(more);
   } else if (!(body.parts||[]).length && from === 0) {
@@ -217,7 +250,7 @@ async function readNative(agent, id, host, from) {
 
 async function loadNativeList() {
   const view = $("#view");
-  view.replaceChildren(el("h2",null,"本机 Agent 文件"), el("p","muted","这些是 Agent 自己写在这台电脑上的会话，不是 Magpie 的网关记录。记录关掉时，这里仍是能读到原文的地方。Magpie 读的是已有的读取器，不会为了这一页去扫无关目录。云端看不到这些文件。"));
+  view.replaceChildren(heading("h2","本机 Agent 文件"), el("p","muted","这些是 Agent 自己写在这台电脑上的会话，不是 Magpie 的网关记录。记录关掉时，这里仍是能读到原文的地方。Magpie 读的是已有的读取器，不会为了这一页去扫无关目录。云端看不到这些文件。"));
   let res;
   try { res = await fetch("/api/sessions", {credentials:"same-origin"}); }
   catch (e) { view.append(el("p","warn","本机列表只在桌面应用里。")); return; }
@@ -232,7 +265,7 @@ async function loadNativeList() {
     b.append(el("div","muted",s.agent+" · "+(s.last||"").slice(0,16)));
     b.onclick = () => {
       const box = el("div","card");
-      view.replaceChildren(el("h2",null,s.title || s.id), el("p","muted","来自本机文件 "+s.agent+" / "+s.id+"。这不是网关记录。"), box);
+      view.replaceChildren(heading("h2", s.title || s.id), el("p","muted","来自本机文件 "+s.agent+" / "+s.id+"。这不是网关记录。"), box);
       readNative(s.agent, s.id, box, 0).catch(showErr);
     };
     view.append(b);
@@ -292,7 +325,7 @@ function renderUsage(u, t) {
 }
 function renderSeries(data, title) {
   const box = el("div","card");
-  box.append(el("h3",null,title+"的 token 趋势"));
+  box.append(heading("h3", title+"的 token 趋势"));
   box.append(el("p","warn",data.note));
   if (!data.buckets.length) box.append(el("p","muted","这段范围没有账本记录。"));
   const max = Math.max(1, ...data.buckets.map(b => b.billed_input+b.output));
@@ -305,7 +338,7 @@ function renderSeries(data, title) {
     bar.append(span); row.append(bar); box.append(row);
   }
   if (data.calls && data.calls.length) {
-    box.append(el("h3",null,"单次输入上下文"));
+    box.append(heading("h3", "单次输入上下文"));
     const table = document.createElement("table");
     table.innerHTML = "<tr><th>时间</th><th>输入上下文</th><th>窗口</th><th>输出</th><th>缓存读/写</th><th>延迟</th><th>状态</th><th>费用</th></tr>";
     for (const c of data.calls.slice(-80)) {
@@ -336,7 +369,7 @@ async function showTrends() {
 async function showProviders() {
   $("#side").replaceChildren(el("p","muted","这里只保存连接。不会为了测试去调用模型。密钥只写入本机 providers.json，接口不再把它读回来。"));
   const data = await api("/api/providers");
-  const view = $("#view"); view.replaceChildren(el("h2",null,"模型连接"));
+  const view = $("#view"); view.replaceChildren(heading("h2","模型连接"));
   for (const p of data.providers) {
     const c = el("div","card");
     c.append(el("strong",null,p.name+" ("+p.id+")"));
@@ -345,7 +378,7 @@ async function showProviders() {
     if (p.models && p.models.length) c.append(el("p","muted",p.models.join(", ")));
     view.append(c);
   }
-  const form = el("form","card");
+  const form = el("form","card fork-mark");
   form.innerHTML = `<h3>添加 API</h3>
     <label>名称</label><input name="name" required placeholder="例如 desk-relay">
     <label>协议</label><select name="protocol"><option value="chat">OpenAI Chat</option><option value="responses">OpenAI Responses</option><option value="anthropic">Anthropic Messages</option><option value="gemini">Gemini</option></select>
@@ -368,12 +401,12 @@ async function showProviders() {
 async function showSettings() {
   $("#side").replaceChildren();
   const b = boot;
-  const view = $("#view"); view.replaceChildren(el("h2",null,"记录与保留"));
+  const view = $("#view"); view.replaceChildren(heading("h2","记录与保留"));
   const limits = el("div","card warn");
   (b.limits||[]).forEach(t => limits.append(el("p",null,t)));
   view.append(limits);
   const cur = b.retention || {};
-  const form = el("form","card");
+  const form = el("form","card fork-mark");
   form.innerHTML = `<p>当前：${b.recording?"记录已打开":"记录关闭（默认）"}。${cur.note||""}</p>
     <label>确认语（打开记录或清除正文时原样填写）</label>
     <input name="confirm" placeholder="${esc(b.confirm_phrase)}">
@@ -412,7 +445,17 @@ async function showSettings() {
 }
 
 async function bootUI() {
+  const theme = pageQuery.get("theme");
+  if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
   boot = await api("/api/bootstrap");
+  const legend = el("p", "fork-legend");
+  legend.append(forkBadge(), document.createTextNode(" " + forkPack().legend));
+  document.querySelector("header").after(legend);
+  document.querySelector("header h1").append(forkBadge());
+  document.querySelectorAll("header nav button").forEach((b) => {
+    b.classList.add("fork-mark");
+    b.append(forkBadge());
+  });
   if (embedded) {
     document.querySelector("header").hidden = true;
     const note = el("p", "card warn");
